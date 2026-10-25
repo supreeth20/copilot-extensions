@@ -1,604 +1,400 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  assertUnchanged, conversation, manifest, replacement,
-  replaceObservations, resultText, searchHistory, validateSummary,
+  assertUnchanged, conversation, OPERATION_PREFIX, OPERATION_SOURCE_PREFIX,
+  replacement, replaceObservations, resultText, validateSummary,
 } from "./context.mjs";
-import { createContextPrune } from "./runtime.mjs";
+import { searchHistory } from "./test-support/history.mjs";
 
 let sequence = 0;
 const event = (type, data = {}, extra = {}) => ({ id: `event-${++sequence}`, type, data, ...extra });
-const user = (content) => event("user.message", { content });
+const user = (content, extra = {}) => event("user.message", { content, ...extra });
 const assistant = (content, toolRequests) => event("assistant.message", { content, toolRequests });
+const observations = [{ callId: "call-1", finding: "npm test failed at src/check.ts:12; no fix verified." }];
+const summary = ["Goal", "Constraints", "State", "Decisions", "Next", "References"]
+  .map((heading) => `## ${heading}\nRetained ${heading.toLowerCase()}.`).join("\n\n");
 function fixture() {
   return [
     user("Preserve Case; never deploy. Ελληνικά."),
     assistant("Checking the failure.", [{ toolCallId: "call-1", name: "test", arguments: { command: "npm test" } }]),
     event("tool.execution_start", { toolCallId: "call-1", toolName: "test", arguments: { command: "npm test" } }),
-    event("tool.execution_complete", { toolCallId: "call-1", success: false, result: { content: "preview", detailedContent: "FAILED at src/check.ts:12\n" + "noise ".repeat(1000) } }),
+    event("tool.execution_complete", { toolCallId: "call-1", success: false,
+      result: { content: "preview", detailedContent: "FAILED at src/check.ts:12\n" + "noise ".repeat(1000) } }),
     assistant("The test failed; the fix is not verified."),
   ];
 }
-const observations = [{ callId: "call-1", finding: "npm test failed at src/check.ts:12; no fix verified." }];
-const summary = ["Goal", "Constraints", "State", "Decisions", "Next", "References"]
-  .map((heading) => `## ${heading}\nRetained ${heading.toLowerCase()}.`).join("\n\n");
 
-test("retains readable ordered blocks alongside opaque primary blocks", () => {
-  const messages = conversation([event("assistant.message", { content: "", reasoningBlocks: {
-    blocks: [{ type: "redacted_thinking", data: "ENCRYPTED" }],
-    orderedBlocks: [{ type: "thinking", thinking: "Exact readable block.\n" }],
-  } })]).messages;
-  assert.deepEqual(messages[0].reasoningBlocks.blocks, [{ type: "thinking", thinking: "Exact readable block.\n" }]);
-  assert(!JSON.stringify(messages).includes("ENCRYPTED"));
-});
-
-test("preserves differing readable reasoning rather than fuzzy-deleting text", () => {
-  const messages = conversation([event("assistant.message", { content: "", reasoningText: "Keep every detail.",
-    reasoningBlocks: { blocks: [{ type: "summary_text", text: "Keep every detail NOW." }] },
-  })]).messages;
-  assert.equal(messages[0].reasoningText, "Keep every detail.");
-  assert.equal(messages[0].reasoningBlocks.blocks[0].text, "Keep every detail NOW.");
-});
-
-test("rejects oversized findings before they can become permanent narrative", () => {
-  assert.throws(() => replaceObservations(conversation(fixture()).messages,
-    [{ callId: "call-1", finding: "x".repeat(12001) }]), /12000 characters/);
-});
-
-test("pages large recorded results without retaining a joined results buffer", () => {
-  const events = [1, 2].map((number) => event("tool.execution_complete", {
-    toolCallId: `large-${number}`, success: true, result: { detailedContent: String(number).repeat(2 * 1024 * 1024) },
-  }));
-  const first = searchHistory(events, { callId: "large-1", limit: 100 });
-  assert.equal(first.content.length, 100);
-  assert.equal(first.matches, 1);
-  const next = searchHistory(events, { callId: "large-1", limit: 100, offset: first.nextOffset, beforeEventId: first.beforeEventId });
-  const full = JSON.stringify({ eventId: events[0].id, type: events[0].type, callId: "large-1", content: events[0].data.result.detailedContent });
-  assert.equal(first.content + next.content, full.slice(0, 200));
-  const broad = searchHistory(events, { query: "1111", limit: 100 });
-  assert.equal(broad.content.length, 100);
-  assert(broad.matches > 1000);
-});
-
-test("history can find attachment metadata without implying binary recovery", () => {
-  const page = searchHistory([event("user.message", { content: "Inspect this.",
-    attachments: [{ type: "file", path: "/fixture/unusual-image.png" }],
-  })], { query: "unusual-image" });
-  assert.equal(page.matches, 1);
-  assert(page.content.includes("unusual-image"));
-});
-
-test("retains exact narrative, Unicode, tool status and association while stripping metadata", () => {
+test("drop retains exact narrative, Unicode and status without copying tool noise or metadata", () => {
   const events = fixture();
-  events.splice(2, 0, event("assistant.usage", { secretMetadata: "not-conversation" }));
+  events.splice(2, 0, event("assistant.usage", { metadata: "not-conversation" }));
   const active = conversation(events);
+  const retained = replaceObservations(active.messages, observations);
   assert.deepEqual(active.pending, []);
-  const messages = replaceObservations(active.messages, observations);
-  assert.deepEqual(messages.filter((m) => m.role === "user" || m.role === "assistant"),
-    active.messages.filter((m) => m.role === "user" || m.role === "assistant"));
-  assert.equal(messages[2].role, "finding");
-  assert.equal(messages[2].success, false);
-  const text = replacement("tools", messages, "same-session");
-  assert(!text.includes("noise"));
-  assert(!text.includes("secretMetadata"));
-  assert(text.includes("Ελληνικά"));
-  assert(text.includes("context_history") && text.includes("session_store_sql"));
-  assert(text.length < JSON.stringify(events).length / 2);
+  assert.deepEqual(retained.filter((message) => message.role !== "finding"), active.messages.filter((message) => message.role !== "tool"));
+  assert.equal(retained[2].success, false);
+  const prompt = replacement("tools", retained, "same-session");
+  assert(prompt.includes("Ελληνικά") && prompt.includes("session_store_sql"));
+  assert(!prompt.includes("context_history") && !prompt.includes("context_apply"));
+  assert(!prompt.includes("noise") && !prompt.includes("not-conversation"));
+  assert(prompt.length < JSON.stringify(events).length / 2);
 });
 
-test("manifest identifies calls without duplicating results", () => {
-  const calls = manifest(conversation(fixture()).messages);
-  assert.equal(calls.length, 1);
-  assert.match(calls[0].operation, /npm test/);
-  assert(!JSON.stringify(calls).includes("noise"));
+test("finding replacement depends on call IDs, not large tool arguments", () => {
+  const active = conversation(fixture()).messages;
+  active[2].arguments = { patch: "x".repeat(50000) };
+  const finding = replaceObservations(active, observations).find((message) => message.role === "finding");
+  assert.deepEqual(finding, { role: "finding", name: "test", callId: "call-1", success: false, content: observations[0].finding });
+  assert(!JSON.stringify(finding).includes("noise"));
+});
+
+test("snapshot permits exactly one correlated command-owned request and no other mutation", () => {
+  const events = fixture();
+  const transition = { sessionId: "session", toolCallId: "owned-call", requestId: "owned-request", toolName: "context_commit" };
+  const operation = { eventIds: events.map(({ id }) => id), transition };
+  const owned = event("external_tool.requested", transition);
+  assert.doesNotThrow(() => assertUnchanged([...events, owned], operation));
+  assert.throws(() => assertUnchanged(events, operation), /history changed/);
+  assert.throws(() => assertUnchanged([...events, owned, owned], operation), /history changed/);
+  for (const field of ["sessionId", "toolCallId", "requestId", "toolName", "agentId"]) {
+    const foreign = { ...owned, data: { ...transition, [field]: "foreign" } };
+    assert.throws(() => assertUnchanged([...events, foreign], operation), /history changed/);
+  }
+  assert.throws(() => assertUnchanged([...events, { ...owned, agentId: "child" }], operation), /history changed/);
+  assert.throws(() => assertUnchanged([...events, owned, user("new input")], operation), /history changed/);
 });
 
 for (const [label, values] of [
   ["missing", []], ["duplicate", [...observations, ...observations]],
-  ["unknown", [{ callId: "other", finding: "x" }]],
-  ["blank", [{ callId: "call-1", finding: " " }]],
+  ["unknown", [{ callId: "other", finding: "x" }]], ["blank", [{ callId: "call-1", finding: " " }]],
+  ["oversized", [{ callId: "call-1", finding: "x".repeat(12001) }]],
 ]) {
-  test(`rejects ${label} observations`, () => {
-    assert.throws(() => replaceObservations(conversation(fixture()).messages, values));
-  });
+  test(`rejects ${label} findings`, () => assert.throws(() => replaceObservations(conversation(fixture()).messages, values)));
 }
 
-test("repeated pruning respects clear boundaries without resurrecting old output or wrapping transcripts", () => {
+test("drop preserves transformed text, finalized thinking, phase and citations byte-for-byte", () => {
+  const events = fixture();
+  events.push(
+    user("  Exact user text\t\n", { transformedContent: "<user>  Exact user text\t\n</user>" }),
+    event("assistant.reasoning_delta", { deltaContent: "Transient fragment" }),
+    event("assistant.reasoning", { content: "  Final thinking\t\n" }),
+    event("assistant.message", { content: " \n", reasoningText: "Readable thinking.\nKeep spacing.  ", phase: "analysis", citations: [] }),
+  );
+  const original = conversation(events).messages;
+  const protectedText = original.filter((message) => message.role !== "tool");
+  const retained = replaceObservations(original, observations);
+  assert.deepEqual(retained.filter((message) => message.role !== "finding"), protectedText);
+  for (const message of protectedText) assert(retained.includes(message));
+  assert(!JSON.stringify(retained).includes("Transient fragment"));
+  const prompt = replacement("tools", retained, "s");
+  assert.deepEqual(conversation([...events, event("session.context_cleared", { initialMessage: prompt })]).messages, retained);
+});
+
+test("readable blocks omit opaque transport data and exact mirrored summaries", () => {
+  const text = "Exact readable thought.\nKeep spacing.  ";
+  const events = [event("assistant.message", {
+    content: "", reasoningText: text,
+    reasoningBlocks: { blocks: [{ type: "reasoning", id: "native-id", encrypted_content: "CIPHERTEXT",
+      summary: [null, { text }], content: 42 }], orderedBlocks: [{ type: "redacted_thinking", data: "CIPHERTEXT" }] },
+  })];
+  assert.deepEqual(conversation(events).messages, [{ role: "assistant", content: "", reasoningText: text }]);
+  const distinct = conversation([event("assistant.message", { content: "", reasoningText: "first", reasoningBlocks: {
+    blocks: [{ type: "redacted_thinking", data: "CIPHERTEXT" }],
+    orderedBlocks: [{ type: "thinking", thinking: text, signature: "SIGNATURE" }],
+  } })]).messages[0];
+  assert.deepEqual(distinct.reasoningBlocks.blocks, [{ type: "thinking", thinking: text }]);
+  assert(!JSON.stringify(distinct).includes("SIGNATURE") && !JSON.stringify(distinct).includes("CIPHERTEXT"));
+});
+
+test("attachment projection retains selections and provenance without copying binary bytes", () => {
+  const attachments = [
+    { type: "selection", displayName: "Selected requirements", filePath: "/fixture/SpecCase.ts",
+      selection: { start: { line: 2, character: 1 }, end: { line: 4, character: 9 } },
+      text: "  Keep CaseSensitive_V9; never deploy. Ελληνικά.\n" },
+    { type: "file", displayName: "Specification", path: "/fixture/spec.pdf", assetId: "sha256:document",
+      mimeType: "application/pdf", byteLength: 321, lineRange: { start: 1, end: 4 } },
+    { type: "directory", displayName: "Sources", path: "/fixture/src", taggedFilesEntry: "* /fixture/src (3 items)" },
+    { type: "github_reference", url: "https://github.com/example/project/issues/17", title: "Acceptance criteria" },
+    { type: "extension_context", extensionId: "fixture", capturedAt: "2026-10-25T00:00:00Z",
+      title: "Review notes", canvasId: "notes", instanceId: "review", payload: { requirement: "Approval required." } },
+    { type: "blob", displayName: "Screenshot", mimeType: "image/png", assetId: "sha256:screenshot",
+      byteLength: 99, data: "BINARY_ATTACHMENT_BYTES" },
+  ];
+  const events = [user("Use the attached requirements.", { attachments })];
+  const original = structuredClone(events);
+  const active = conversation(events);
+  assert.equal(active.hasAttachments, true);
+  assert.deepEqual(active.messages[0].attachments.slice(0, -1), attachments.slice(0, -1));
+  const binary = active.messages[0].attachments.at(-1);
+  assert.equal(binary.assetId, "sha256:screenshot");
+  assert.equal(binary.displayName, "Screenshot");
+  assert.equal(binary.mimeType, "image/png");
+  assert.match(binary.notice, /not inspected|not available/i);
+  assert.doesNotMatch(JSON.stringify(active.messages), /BINARY_ATTACHMENT_BYTES/);
+  assert.deepEqual(events, original);
+  assert(searchHistory(events, { query: "CaseSensitive_V9" }).matches > 0);
+  const replayed = conversation([event("session.context_cleared", {
+    initialMessage: replacement("tools", active.messages, "same-session"),
+  })]);
+  assert.equal(replayed.hasAttachments, true);
+  assert.deepEqual(replayed.messages, active.messages);
+});
+
+test("binary tool evidence retains descriptions, asset IDs and resource URIs without payloads", () => {
+  const data = { success: true, result: {
+    content: "Captured diagnostic evidence.",
+    binaryResultsForLlm: [
+      { type: "image", mimeType: "image/png", description: "Error dialog", data: "INLINE_IMAGE_BYTES",
+        metadata: { path: "/fixture/error.png", source: "diagnostic" } },
+      { type: "image_ref", mimeType: "image/png", description: "Persisted capture",
+        assetId: "sha256:capture", byteLength: 123 },
+      { type: "omitted_image", mimeType: "image/png", description: "Unavailable capture",
+        omittedReason: "size_limit", byteLength: 999 },
+    ],
+    contents: [
+      { type: "image", mimeType: "image/png", data: "CONTENT_IMAGE_BYTES" },
+      { type: "audio", mimeType: "audio/wav", data: "CONTENT_AUDIO_BYTES" },
+      { type: "resource", resource: { uri: "fixture://capture", mimeType: "image/png", blob: "RESOURCE_BYTES" } },
+      { type: "resource", resource: { uri: "fixture://requirements", text: "Require manual approval." } },
+    ],
+  } };
+  const original = structuredClone(data);
+  const text = resultText(data);
+  for (const retained of ["Error dialog", "/fixture/error.png", "diagnostic", "sha256:capture",
+    "Unavailable capture", "size_limit", "fixture://capture", "image/png", "audio/wav", "Require manual approval."]) {
+    assert(text.includes(retained), `Missing binary provenance: ${retained}`);
+  }
+  assert.match(text, /not inspected|not available/i);
+  assert.doesNotMatch(text, /INLINE_IMAGE_BYTES|CONTENT_IMAGE_BYTES|CONTENT_AUDIO_BYTES|RESOURCE_BYTES/);
+  assert.deepEqual(data, original);
+  const events = [event("tool.execution_complete", { ...data, toolCallId: "binary-call" })];
+  assert.equal(conversation(events).hasAttachments, true);
+  assert(searchHistory(events, { query: "sha256:capture" }).matches > 0);
+  assert.equal(conversation([event("tool.execution_complete", {
+    toolCallId: "empty-binary", success: true,
+    result: { contents: [{ type: "resource", resource: { uri: "fixture://empty", blob: "" } }] },
+  })]).hasAttachments, true);
+});
+
+test("repeated blocks preserve source order and multiplicity without duplicating mirrors", () => {
+  const block = (thinking) => ({ type: "thinking", thinking });
+  const blocks = [block("first"), block("second"), block("first")];
+  const events = [event("assistant.message", { content: "", reasoningBlocks: {
+    blocks, orderedBlocks: [...blocks, block("third"), block("first")],
+  } })];
+  const expected = [...blocks, block("third"), block("first")];
+  for (let round = 0; round < 3; round++) {
+    assert.deepEqual(conversation(events).messages[0].reasoningBlocks.blocks, expected);
+    events.push(event("session.context_cleared", { initialMessage: replacement("tools", conversation(events).messages, "s") }));
+  }
+});
+
+test("repeated drops respect clear boundaries and do not nest transcripts", () => {
   const events = fixture();
   const retained = replaceObservations(conversation(events).messages, observations);
   const prompt = replacement("tools", retained, "s");
-  events.push(event("session.context_cleared", { initialMessage: prompt }),
-    event("user.message", { content: "", transformedContent: prompt }), user("Continue."));
-  const active = conversation(events);
-  assert.deepEqual(active.messages, [...retained, { role: "user", content: "Continue." }]);
-  assert.equal(manifest(active.messages).length, 0);
-  assert(!JSON.stringify(active).includes("noise"));
-  assert.equal(replacement("tools", active.messages, "s").split("<context-prune-v1>").length, 2);
+  events.push(event("session.context_cleared", { initialMessage: prompt }), user("", { transformedContent: prompt }), user("Continue"));
+  assert.deepEqual(conversation(events).messages, [...retained, { role: "user", content: "Continue" }]);
+  assert(!conversation(events).messages.some((message) => message.role === "tool"));
+  assert.equal(replacement("tools", conversation(events).messages, "s").split("<context-prune-v1>").length, 2);
 });
 
-test("native compaction respects summary boundary and keeps events arriving during compaction", () => {
+test("compact/drop replay excludes generated seeds and legacy reload acknowledgments", () => {
+  const prompt = replacement("compact", summary, "s");
+  for (const seed of [user(prompt), user("", { transformedContent: `<wrapped>${prompt}</wrapped>` })]) {
+    assert.deepEqual(conversation([event("session.context_cleared", { initialMessage: prompt }), seed,
+      assistant("Context saved. Exit Copilot, then run: copilot --resume s"), user("Continue")]).messages,
+    [{ role: "user", content: summary }, { role: "user", content: "Continue" }]);
+  }
+  const legacy = `# Retained working context\n\n${summary}\n\nContinue the same session from this retained context. Old footer.`;
+  assert.deepEqual(conversation([event("session.context_cleared", { initialMessage: legacy })]).messages, [{ role: "user", content: summary }]);
+});
+
+test("consecutive compacts replace prior summaries without nesting or losing original history", () => {
   const events = fixture();
-  events.push(event("session.compaction_start", { compactionAttemptId: "attempt" }), user("A newer constraint."),
-    event("session.compaction_complete", { success: true, compactionAttemptId: "attempt", summaryContent: "Native summary" }));
-  assert.deepEqual(conversation(events).messages, [
-    { role: "user", content: "Native summary" }, { role: "user", content: "A newer constraint." },
-  ]);
-});
-
-test("failed compaction is not a replay boundary; latest clear wins", () => {
-  const events = fixture();
-  events.push(event("session.compaction_complete", { success: false, summaryContent: "Do not retain" }));
-  assert(conversation(events).messages.some((m) => m.role === "tool"));
-  events.push(event("session.context_cleared", { initialMessage: "New summary" }));
-  assert.deepEqual(conversation(events).messages, [{ role: "user", content: "New summary" }]);
-});
-
-test("an apply completion crossing a clear boundary is not an unpruned observation", () => {
-  const events = [
-    event("tool.execution_start", { toolName: "context_apply", toolCallId: "apply" }),
-    event("session.context_cleared", { initialMessage: "Retained state" }),
-    event("tool.execution_complete", { toolCallId: "apply", success: true, result: { content: "Applied" } }),
-  ];
-  assert.deepEqual(conversation(events).messages, [{ role: "user", content: "Retained state" }]);
-});
-
-test("drop deterministically retains non-tool messages and exposed thinking byte-for-byte", () => {
-  const events = fixture();
-  const protectedEvents = [
-    event("user.message", { content: "  Original user text\t\n", transformedContent: "<user>  Original user text\t\n</user>" }),
-    event("assistant.reasoning_delta", { reasoningId: "r1", deltaContent: "Transient fragment" }, { ephemeral: true }),
-    event("assistant.reasoning", { reasoningId: "r1", content: "  Final thinking text\t\n" }),
-    event("assistant.message", { content: " \n", reasoningText: "Readable thinking.\nKeep this spacing.  ", phase: "analysis" }),
-    event("assistant.message", { content: "", reasoningText: "Thinking without a prose reply.",
-      reasoningBlocks: { provider: "fixture", blocks: [{ type: "thinking", thinking: "Exact block text.\n" }] },
-      citations: { sources: [], spans: [] } }),
-  ];
-  events.push(...protectedEvents);
-  const original = conversation(events).messages;
-  const before = JSON.stringify(original);
-  const protectedMessages = original.filter((message) => message.role !== "tool");
-  const first = replaceObservations(original, observations);
-  const second = replaceObservations(original, observations);
-  assert.equal(JSON.stringify(first), JSON.stringify(second));
-  assert.equal(JSON.stringify(original), before);
-  assert.deepEqual(first.filter((message) => message.role !== "finding"), protectedMessages);
-  for (const message of protectedMessages) assert(first.includes(message));
-  assert(!JSON.stringify(first).includes("Transient fragment"));
-  const prompt = replacement("tools", first, "s");
-  const again = conversation([...events, event("session.context_cleared", { initialMessage: prompt })]).messages;
-  assert.deepEqual(again, first);
-  assert.deepEqual(again.slice(-4), [
-    { role: "user", content: "  Original user text\t\n", transformedContent: "<user>  Original user text\t\n</user>" },
-    { role: "reasoning", content: "  Final thinking text\t\n" },
-    { role: "assistant", content: " \n", reasoningText: "Readable thinking.\nKeep this spacing.  ", phase: "analysis" },
-    { role: "assistant", content: "", reasoningText: "Thinking without a prose reply.",
-      reasoningBlocks: { blocks: [{ type: "thinking", thinking: "Exact block text.\n" }] },
-      citations: { sources: [], spans: [] } },
-  ]);
-});
-
-test("retains readable thinking but never serializes opaque native reasoning or duplicate summaries", () => {
-  const text = "Exact readable thought.\nKeep whitespace.  ";
-  const events = [event("assistant.message", {
-    content: "", reasoningText: text, encryptedContent: "opaque-response",
-    reasoningBlocks: { provider: "openai-responses", blocks: [{
-      type: "reasoning", id: "native-response-id", encrypted_content: "cipher".repeat(2000),
-      summary: [{ type: "summary_text", text }], content: [],
-    }] },
-  })];
-  assert.deepEqual(conversation(events).messages, [{ role: "assistant", content: "", reasoningText: text }]);
-  const serialized = replacement("tools", conversation(events).messages, "s");
-  assert(!serialized.includes("cipher") && !serialized.includes("native-response-id") && !serialized.includes("opaque-response"));
-  const fallback = conversation([event("assistant.message", { content: "", reasoningBlocks: {
-    provider: "anthropic", blocks: [{ type: "thinking", thinking: text, signature: "opaque-signature" }],
-  } })]).messages[0];
-  assert.deepEqual(fallback.reasoningBlocks, { blocks: [{ type: "thinking", thinking: text }] });
-  assert(!JSON.stringify(fallback).includes("opaque-signature"));
-});
-
-test("detects unresolved tools and attachments; excludes subagent events", () => {
-  const events = [user("x"), event("user.message", { content: "image", attachments: [{ type: "image" }] }),
-    assistant("", [{ toolCallId: "unfinished", name: "bash" }]), user("parent")];
-  events.push(event("assistant.message", { content: "agent-private" }, { agentId: "child" }));
-  const active = conversation(events);
-  assert.equal(active.pending.length, 1);
-  assert.equal(active.hasAttachments, true);
-  assert(!JSON.stringify(active).includes("agent-private"));
-});
-
-test("history recovers original large tool output, including after pruning", () => {
-  const events = fixture();
-  events.push(event("session.context_cleared", { initialMessage: "Short summary" }));
-  let offset = 0;
-  let beforeEventId;
-  let restored = "";
-  do {
-    const page = searchHistory(events, { callId: "call-1", offset, limit: 400, beforeEventId });
-    assert(page.content.length <= 400);
-    restored += page.content;
-    offset = page.nextOffset;
-    beforeEventId = page.beforeEventId;
-  } while (offset !== null);
-  assert.equal(JSON.parse(restored).content, conversation(fixture()).messages[2].content);
-});
-
-test("keeps native truncation markers and artifact references; bounds manifest arguments", () => {
-  const events = fixture();
-  events[2].data.arguments = { patch: "x".repeat(50000) };
-  events[3].data.result = { content: "preview", detailedContent: "Head\n[Truncated - full output temporarily saved to /tmp/native-output.txt]" };
-  const active = conversation(events);
-  assert.equal(manifest(active.messages)[0].operation.length, 500);
-  assert(searchHistory(events, { callId: "call-1" }).content.includes("/tmp/native-output.txt"));
-  assert(searchHistory(events, { callId: "call-1" }).notice.includes("missing artifacts cannot be recovered"));
-});
-
-test("query gives a snippet around a late match rather than the start of a large log", () => {
-  const events = [event("tool.execution_complete", { toolCallId: "large", success: true,
-    result: { content: "x".repeat(100000) + "NEEDLE actual result" } })];
-  const result = searchHistory(events, { query: "needle" });
-  assert.equal(result.matches, 1);
-  assert(result.content.includes("NEEDLE actual result"));
-  assert.equal(searchHistory(events, { query: "absent" }).matches, 0);
-  for (const input of [{}, { query: "x", limit: 12001 }, { query: "x", offset: -1 }]) {
-    assert.throws(() => searchHistory(events, input));
+  const original = searchHistory(events, { callId: "call-1" }).content;
+  let previous;
+  for (let round = 0; round < 12; round++) {
+    const update = `New requirement ${round}.`;
+    events.push(user(update));
+    if (previous) {
+      assert.deepEqual(conversation(events).messages, [
+        { role: "user", content: previous }, { role: "user", content: update },
+      ]);
+    }
+    const next = summary.replace("Retained state.", `Current state ${round}.`);
+    const retained = replacement("compact", validateSummary(next), "same-session");
+    events.push(event("session.context_cleared", { initialMessage: retained }),
+      user("", { transformedContent: retained }), event("session.resume"));
+    assert.deepEqual(conversation(events).messages, [{ role: "user", content: next }]);
+    assert.equal(retained.split("<context-prune-v1>").length, 2);
+    assert.equal(searchHistory(events, { callId: "call-1" }).content, original);
+    previous = next;
   }
 });
 
-test("summary schema requires working-state sections", () => {
-  assert.equal(validateSummary(summary), summary);
-  assert.throws(() => validateSummary(""));
-  assert.throws(() => validateSummary("short but missing obligations"));
-});
-
-test("staleness rejects user input, tool work, subagent work and other replacements", () => {
-  const original = fixture();
-  const operation = { cutoff: original.at(-1).id, prompt: "authorized operation" };
-  assert.doesNotThrow(() => assertUnchanged([...original, user(operation.prompt), assistant("Preparing")], operation));
-  for (const next of [
-    user("new obligation"), event("tool.execution_start", { toolName: "bash", toolCallId: "new" }),
-    event("tool.execution_complete", { toolCallId: "unknown" }),
-    event("session.context_cleared"), event("session.compaction_start"), event("session.compaction_complete", { success: true }),
-    event("assistant.message", { content: "child" }, { agentId: "child" }),
-  ]) assert.throws(() => assertUnchanged([...original, next], operation));
-  assert.throws(() => assertUnchanged([], operation));
-});
-
-function harness() {
+test("native compaction keeps concurrent messages and cannot reuse starts across a clear", () => {
   const events = fixture();
-  const checkpoints = new Map();
-  const calls = [];
-  let queue = { items: [], steeringMessages: [] };
-  let pending = { items: [] };
-  let tasks = { tasks: [] };
-  let failClear = false;
-  let failSave = false;
-  let corruptCheckpoint = false;
-  let processing = false;
-  let permissionItems = [];
-  let failLog = false;
-  let sentPrompt;
-  const session = {
-    sessionId: "disposable-session",
-    getEvents: async () => structuredClone(events),
-    send: async ({ prompt }) => {
-      sentPrompt = prompt;
-      events.push(user(prompt));
-      calls.push("send");
-    },
-    rpc: {
-      queue: { pendingItems: async () => queue },
-      tools: { listPendingRequests: async () => pending },
-      tasks: { list: async () => tasks },
-      permissions: { pendingRequests: async () => ({ items: permissionItems }) },
-      metadata: { isProcessing: async () => ({ processing }) },
-      workspaces: {
-        addSummary: async ({ content }) => {
-          if (failSave) throw new Error("save failed");
-          const number = checkpoints.size;
-          checkpoints.set(number, content);
-          calls.push("checkpoint");
-          return { summary: { checkpointNumber: number } };
-        },
-        readCheckpoint: async ({ number }) => ({ content: corruptCheckpoint ? "corrupted" : checkpoints.get(number) }),
-      },
-      history: { clearContext: async ({ prompt }) => {
-        calls.push("clear");
-        if (failClear) throw new Error("connection lost");
-        events.push(event("session.context_cleared", { initialMessage: prompt }));
-        return { messagesCleared: 8 };
-      } },
-      log: async () => {
-        if (failLog) throw new Error("logging disconnected");
-        calls.push("log");
-      },
-    },
-  };
-  const extension = createContextPrune(() => session);
-  const invoke = async (mode = "tools", args = "") => {
-    await extension.commands.find((c) => c.name === (mode === "tools" ? "context-drop-tools" : "context-compact"))
-      .handler({ sessionId: session.sessionId, args });
-    return { operationId: sentPrompt.match(/operationId "([^"]+)"/)[1], mode,
-      ...(mode === "tools" ? { observations } : { summary }) };
-  };
-  const apply = (args, sessionId = session.sessionId, invocation = {}) =>
-    extension.tools.find((t) => t.name === "context_apply").handler(args, { sessionId, ...invocation });
-  return {
-    events, checkpoints, calls, extension, invoke, apply, prompt: () => sentPrompt,
-    queue: (value) => { queue = value; }, tasks: (value) => { tasks = value; },
-    pending: (value) => { pending = value; }, failClear: () => { failClear = true; },
-    failSave: () => { failSave = true; }, corruptCheckpoint: () => { corruptCheckpoint = true; },
-    processing: (value) => { processing = value; }, permissions: (items) => { permissionItems = items; },
-    failLog: () => { failLog = true; },
-  };
-}
-
-for (const mode of ["tools", "compact"]) {
-  test(`${mode} command authorizes exactly one apply, saves exact checkpoint first, requires same-session reload`, async () => {
-    const h = harness();
-    const args = await h.invoke(mode);
-    const response = await h.apply(args);
-    assert.match(response, /copilot --resume disposable-session/);
-    assert.deepEqual(h.calls, ["send", "checkpoint", "clear", "log"]);
-    assert.equal(h.checkpoints.get(0), h.events.at(-1).data.initialMessage);
-    await assert.rejects(h.apply(args), /No matching/);
-    await assert.rejects(h.invoke(), /Reload this session first/);
-  });
-}
-
-test("uncommanded, wrong-mode, wrong-session and canceled apply are rejected", async () => {
-  const h = harness();
-  await assert.rejects(h.apply({ operationId: "guessed", mode: "compact", summary }), /No matching/);
-  const args = await h.invoke();
-  await assert.rejects(h.apply({ ...args, mode: "compact" }), /No matching/);
-  await assert.rejects(h.apply(args, "another-session"), /Session scope/);
-  await h.extension.commands.find((c) => c.name === "context-cancel").handler();
-  await assert.rejects(h.apply(args), /No matching/);
-  assert(!h.calls.includes("clear"));
+  events.push(event("session.compaction_start", { compactionAttemptId: "a" }), user("Newer constraint"),
+    event("session.compaction_complete", { success: true, compactionAttemptId: "a", summaryContent: "Native summary" }));
+  assert.deepEqual(conversation(events).messages, [{ role: "user", content: "Native summary" }, { role: "user", content: "Newer constraint" }]);
+  events.push(event("session.context_cleared", { initialMessage: "Retained" }), user("new information"),
+    event("session.compaction_complete", { success: true, summaryContent: "New native summary" }));
+  assert.deepEqual(conversation(events).messages, [{ role: "user", content: "New native summary" }]);
 });
 
-test("new input between prepare and apply prevents clearing", async () => {
-  const h = harness();
-  const args = await h.invoke();
-  h.events.push(user("Don't lose this."));
-  await assert.rejects(h.apply(args), /new user message/);
-  assert(!h.calls.includes("clear"));
-  await h.invoke();
-});
-
-for (const [name, block] of [
-  ["queue", (h) => h.queue({ items: [{ id: "message" }], steeringMessages: [] })],
-  ["steering", (h) => h.queue({ items: [], steeringMessages: ["new message"] })],
-  ["pending tools", (h) => h.pending({ items: [{ toolName: "bash" }] })],
-  ["background work", (h) => h.tasks({ tasks: [{ status: "running" }] })],
-  ["permission requests", (h) => h.permissions([{ requestId: "permission" }])],
-]) {
-  test(`blocks ${name} before preparation and before application`, async () => {
-    const before = harness();
-    block(before);
-    await assert.rejects(before.invoke());
-    const after = harness();
-    const args = await after.invoke();
-    block(after);
-    await assert.rejects(after.apply(args));
-    assert(!after.calls.includes("clear"));
-  });
-}
-
-test("allows the apply request itself but not simultaneous new work", async () => {
-  const h = harness();
-  const args = await h.invoke();
-  h.pending({ items: [{ toolName: "context_apply" }] });
-  h.events.push(event("tool.execution_start", { toolName: "context_apply", toolCallId: "apply" }));
-  await h.apply(args);
-});
-
-test("checkpoint save or exactness failures never clear", async () => {
-  for (const failure of ["failSave", "corruptCheckpoint"]) {
-    const h = harness();
-    const args = await h.invoke();
-    h[failure]();
-    await assert.rejects(h.apply(args), /not cleared/);
-    assert(!h.calls.includes("clear"));
+test("failed and unapplied native compactions cannot remove current evidence", () => {
+  for (const data of [{ success: false }, { success: true, outcome: "skipped" }]) {
+    assert(conversation([...fixture(), event("session.compaction_complete", { ...data, summaryContent: "Not applied" })]).messages.some((m) => m.role === "tool"));
   }
 });
 
-test("clear failure is explicit and cannot be blindly retried", async () => {
-  const h = harness();
-  const args = await h.invoke();
-  h.failClear();
-  await assert.rejects(h.apply(args), /clearing was attempted.*do not retry/);
-  await assert.rejects(h.apply(args), /No matching/);
-  assert.equal(h.checkpoints.size, 1);
-});
-
-test("invalid findings can be corrected without creating a checkpoint or clearing", async () => {
-  const h = harness();
-  const args = await h.invoke();
-  await assert.rejects(h.apply({ ...args, observations: [] }), /not cleared/);
-  assert.equal(h.checkpoints.size, 0);
-  await h.apply(args);
-});
-
-test("drop uses only tool-finding instructions; compaction alone receives the compaction skill", async () => {
-  const drop = harness();
-  const args = await drop.invoke();
-  assert.match(drop.prompt(), /NOT conversation compaction/);
-  assert.doesNotMatch(drop.prompt(), /## Goal|# Context compaction/);
-  await assert.rejects(drop.apply({ ...args, summary }), /findings, not a conversation summary/);
-  assert(!drop.calls.includes("clear"));
-  const compact = harness();
-  const compactArgs = await compact.invoke("compact");
-  assert.match(compact.prompt(), /# Context compaction/);
-  await assert.rejects(compact.apply({ ...compactArgs, observations }), /summary, not tool findings/);
-  assert(!compact.calls.includes("clear"));
-});
-
-test("tool mode rejects attachments, empty histories and already-pruned contexts", async () => {
-  const attachment = harness();
-  attachment.events.push(event("user.message", { content: "photo", attachments: [{ type: "image" }] }));
-  await assert.rejects(attachment.invoke(), /attachments/);
-  const empty = harness();
-  empty.events.length = 0;
-  await assert.rejects(empty.invoke(), /No conversation/);
-  const pruned = harness();
-  pruned.events.push(event("session.context_cleared", { initialMessage: "No tool output here." }));
-  await assert.rejects(pruned.invoke(), /No unpruned/);
-});
-
-test("rejects preparation during native compaction", async () => {
-  const h = harness();
-  h.events.push(event("session.compaction_start"));
-  await assert.rejects(h.invoke(), /compaction is in progress/);
-});
-
-test("rejects preparation while the agent is responding", async () => {
-  const h = harness();
-  h.events.push(event("assistant.turn_start"));
-  await assert.rejects(h.invoke(), /agent is still responding/);
-});
-
-test("successful but unapplied native summaries are not replay boundaries", () => {
-  const events = fixture();
-  events.push(event("session.compaction_complete", { success: true, outcome: "skipped", summaryContent: "Not applied" }));
-  assert(conversation(events).messages.some((message) => message.role === "tool"));
-});
-
-test("both context tools are never deferred and apply is terminal", () => {
-  const h = harness();
-  assert(h.extension.tools.every((tool) => tool.defer === "never"));
-  assert.equal(h.extension.tools.find((tool) => tool.name === "context_apply").isTerminal, true);
-});
-
-test("aborted or reloaded calls no longer block preparation and never imply success", () => {
+test("interrupted calls have unknown outcomes; late recorded results replace placeholders", () => {
   for (const stop of ["abort", "session.resume", "session.shutdown", "session.idle", "assistant.idle"]) {
-    const events = [event("assistant.turn_start"), assistant("", [{ toolCallId: "stopped", name: "bash", arguments: {} }]), event(stop)];
+    const events = [event("assistant.turn_start"), assistant("", [{ toolCallId: "late", name: "bash" }]), event(stop)];
     const active = conversation(events);
     assert.equal(active.turnActive, false);
     assert.equal(active.pending.length, 0);
     assert.equal(active.messages.at(-1).success, false);
     assert.match(active.messages.at(-1).content, /status is unknown/);
+    events.push(event("tool.execution_complete", { toolCallId: "late", success: true, result: { content: "late result" } }));
+    const completed = conversation(events).messages.filter((m) => m.role === "tool");
+    assert.equal(completed.length, 1);
+    assert.equal(completed[0].content, "late result");
   }
 });
 
-test("a real result arriving after abort replaces unknown status rather than duplicating the call", () => {
-  const events = [assistant("", [{ toolCallId: "late", name: "bash" }]), event("abort"),
-    event("tool.execution_complete", { toolCallId: "late", success: true, result: { content: "completed late" } })];
-  assert.equal(conversation(events).messages.filter((message) => message.role === "tool").length, 1);
-  assert.equal(conversation(events).messages.at(-1).content, "completed late");
-});
-
-test("structured results, empty-content errors and shell spill references remain recoverable", () => {
-  assert.match(resultText({ result: { content: "" }, error: { message: "ENOENT" }, success: false }), /ENOENT/);
-  assert.match(resultText({ result: { content: "partial" }, error: { message: "failure" } }), /failure/);
-  assert.match(resultText({ result: { content: "", structuredContent: { items: [1, 2] } } }), /"items":\[1,2\]/);
-  const shell = { type: "shell_exit", exitCode: 1, shellId: "shell", outputFilePath: "/tmp/spill.log", outputPreview: "last error" };
-  assert.match(resultText({ result: { content: "", contents: [shell] } }), /\/tmp\/spill.log/);
-  assert.match(resultText({ result: { contents: [{ type: "resource", resource: { text: "resource evidence" } }] } }), /resource evidence/);
-});
-
-test("tool-returned binary results are refused by tool-only preparation", async () => {
+test("detects unresolved calls and binary evidence but excludes subagent narrative", () => {
+  const events = [assistant("", [{ toolCallId: "pending", name: "bash" }]), user("photo", { attachments: [{}] }),
+    event("assistant.message", { content: "child-private" }, { agentId: "child" })];
+  assert.equal(conversation(events).pending.length, 1);
+  assert.equal(conversation(events).hasAttachments, true);
+  assert(!JSON.stringify(conversation(events)).includes("child-private"));
   for (const result of [
-    { content: "image", binaryResultsForLlm: [{ type: "image", mimeType: "image/png", data: "binary" }] },
-    { content: "", contents: [{ type: "audio", data: "binary" }] },
-    { content: "", contents: [{ type: "resource", resource: { blob: "binary" } }] },
-  ]) {
-    const h = harness();
-    h.events[3].data.result = result;
-    await assert.rejects(h.invoke(), /attachments/);
+    { binaryResultsForLlm: [{}] }, { contents: [{ type: "audio", data: "binary" }] },
+    { contents: [{ type: "resource", resource: { blob: "binary" } }] },
+  ]) assert.equal(conversation([event("tool.execution_complete", { toolCallId: "binary", result })]).hasAttachments, true);
+});
+
+test("legacy extension completions crossing a clear boundary do not become tool evidence", () => {
+  const events = [event("tool.execution_start", { toolName: "context_apply", toolCallId: "apply" }),
+    event("session.context_cleared", { initialMessage: "Retained" }),
+    event("tool.execution_complete", { toolCallId: "apply", success: true, result: { content: "Applied" } })];
+  assert.deepEqual(conversation(events).messages, [{ role: "user", content: "Retained" }]);
+});
+
+test("literal operation markers remain prose; only correlated legacy origins are excluded", () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const content = `${OPERATION_PREFIX}Prepare findings and immediately call context_apply once with operationId "${id}" and mode "tools".`;
+  for (const source of [undefined, "user", "system", `${OPERATION_SOURCE_PREFIX}other`]) {
+    const events = [user(content, { source })];
+    assert.equal(conversation(events).messages[0].content, content);
+    assert.equal(searchHistory(events, { query: id }).matches, 1);
   }
+  const generated = user(content, { source: `${OPERATION_SOURCE_PREFIX}${id}` });
+  assert.deepEqual(conversation([generated]).messages, []);
+  const copied = user(content, { source: "user" });
+  assert.equal(conversation([generated, copied]).messages[0].content, content);
+  const legacy = user(content, { source: "system" });
+  const request = event("tool.execution_start", { toolName: "context_apply", toolCallId: "apply", arguments: { operationId: id } });
+  assert.deepEqual(conversation([legacy, request]).messages, []);
 });
 
-test("compact-to-drop envelopes exclude previous control footers and acknowledgments", () => {
-  const prompt = replacement("compact", summary, "s");
-  for (const seed of [
-    { content: prompt },
-    { content: "", transformedContent: `<wrapped>${prompt}</wrapped>` },
-  ]) {
-    const events = [event("session.context_cleared", { initialMessage: prompt }), event("user.message", seed),
-      assistant("Context saved. Exit Copilot, then run: copilot --resume s"), user("Continue")];
-    assert.deepEqual(conversation(events).messages, [{ role: "user", content: summary }, { role: "user", content: "Continue" }]);
-  }
-});
-
-test("legacy compact footers are not embedded in a new transcript", () => {
-  const prompt = `# Retained working context\n\n${summary}\n\nContinue the same session from this retained context. Old footer.`;
-  assert.deepEqual(conversation([event("session.context_cleared", { initialMessage: prompt })]).messages,
-    [{ role: "user", content: summary }]);
-});
-
-test("native compaction cannot pair a consumed start or cross a later clear boundary", () => {
-  const events = [
-    event("session.compaction_start"), event("session.compaction_complete", { success: false }),
-    user("obsolete"), event("session.context_cleared", { initialMessage: "Retained" }),
-    user("new information"), event("session.compaction_complete", { success: true, summaryContent: "New native summary" }),
-  ];
-  assert.deepEqual(conversation(events).messages, [{ role: "user", content: "New native summary" }]);
-});
-
-test("notifications are preserved and new notifications, rewinds and parallel requests invalidate apply", () => {
-  const notification = event("system.notification", { content: "Background verification completed." });
-  assert.deepEqual(conversation([notification]).messages, [{ role: "notification", content: notification.data.content }]);
+test("snapshot validation rejects any appended, rewound or substituted event", () => {
   const events = fixture();
-  const operation = { cutoff: events.at(-1).id, prompt: "operation" };
-  for (const added of [
-    notification, event("session.truncation"), event("session.snapshot_rewind"),
-    assistant("", [{ toolCallId: "parallel", name: "bash" }]),
-  ]) assert.throws(() => assertUnchanged([...events, added], operation));
-  assert.throws(() => assertUnchanged([...events, user("operation"), user("operation")], operation));
-  assert.doesNotThrow(() => assertUnchanged([...events,
-    event("tool.execution_start", { toolName: "tool_search_tool", toolCallId: "discovery" }),
-    event("tool.execution_complete", { toolCallId: "discovery", success: true })], operation));
+  const snapshot = { eventIds: events.map((e) => e.id) };
+  assert.doesNotThrow(() => assertUnchanged(events, snapshot));
+  for (const extra of [user("new"), event("system.notification"), event("tool.execution_start"),
+    event("session.compaction_start"), event("abort"), event("tool.execution_start", { toolName: "tool_search_tool" }),
+    event("assistant.message", {}, { agentId: "child" })]) assert.throws(() => assertUnchanged([...events, extra], snapshot));
+  assert.throws(() => assertUnchanged(events.slice(1), snapshot));
+  assert.throws(() => assertUnchanged([user("replaced"), ...events.slice(1)], snapshot));
 });
 
-test("idle preparation expires old authorization; processing and withdrawn user input block new preparation", async () => {
-  const h = harness();
-  const stale = await h.invoke();
-  await h.invoke();
-  await assert.rejects(h.apply(stale), /No matching/);
-  const processing = harness();
-  processing.processing(true);
-  await assert.rejects(processing.invoke(), /still processing/);
-  const queued = harness();
-  queued.queue({ items: [], steeringMessages: [], withdrawableTurnMessageId: "starting-user-turn" });
-  await assert.rejects(queued.invoke(), /Queued input/);
+test("summary validation rejects skeletons, missing sections and duplicate sections", () => {
+  assert.equal(validateSummary(summary), summary);
+  for (const invalid of ["", "too little", summary + "\n## Goal\nDuplicate.",
+    ["Goal", "Constraints", "State", "Decisions", "Next", "References"].map((heading) => `## ${heading}`).join("\n")]) {
+    assert.throws(() => validateSummary(invalid));
+  }
 });
 
-test("subagents, parallel apply requests and a different external request cannot apply", async () => {
-  const h = harness();
-  const args = await h.invoke();
-  await assert.rejects(h.apply(args, "disposable-session", { agentId: "child" }), /main agent/);
-  h.pending({ items: [{ toolName: "context_apply", requestId: "other" }] });
-  await assert.rejects(h.apply(args, "disposable-session", { requestId: "self" }), /Other tool requests/);
-  h.pending({ items: [{ toolName: "context_apply" }, { toolName: "context_apply" }] });
-  await assert.rejects(h.apply(args), /Other tool requests/);
-  assert(!h.calls.includes("clear"));
+test("recorded errors, structured content, citations and spill references remain recoverable", () => {
+  for (const result of ["partial", { content: "" }, { content: "partial" }]) {
+    assert.match(resultText({ result, error: { message: "ENOENT" }, success: false }), /ENOENT/);
+  }
+  assert.match(resultText({ result: { structuredContent: { items: [1, 2] } } }), /"items":\[1,2\]/);
+  assert.match(resultText({ result: { contents: [{ type: "shell_exit", outputFilePath: "/tmp/spill.log" }] } }), /\/tmp\/spill.log/);
+  assert.match(resultText({ result: { citableSources: [{ url: "https://example.invalid" }] } }), /example.invalid/);
+  assert.match(resultText({ result: { contents: [{ type: "resource", resource: { text: "evidence" } }] } }), /evidence/);
 });
 
-test("summary skeletons, duplicate sections and logging failures are explicit", async () => {
-  assert.throws(() => validateSummary(["Goal", "Constraints", "State", "Decisions", "Next", "References"].map((h) => `## ${h}`).join("\n")));
-  assert.throws(() => validateSummary(`${summary}\n## Goal\nDuplicate.`));
-  const h = harness();
-  h.queue({ items: [{}], steeringMessages: [] });
-  h.failLog();
-  await assert.rejects(h.invoke(), (error) => error instanceof AggregateError && error.errors.length === 2 && /Queued input/.test(error.message));
+test("history indexes all readable fields and attachments, never opaque payloads", () => {
+  const events = [user("displayed", { transformedContent: "transformed", reasoningText: "readable",
+    attachments: [{ path: "/fixture/image.png" }], reasoningBlocks: {
+      blocks: [{ type: "reasoning", summary: [null, { text: "block-only" }], encrypted_content: "CIPHERTEXT" }],
+      orderedBlocks: [{ type: "thinking", thinking: "ordered-only", signature: "SIGNATURE" }],
+    },
+  })];
+  for (const query of ["displayed", "transformed", "readable", "block-only", "ordered-only", "image.png"]) {
+    assert.equal(searchHistory(events, { query }).matches, 1);
+  }
+  for (const query of ["CIPHERTEXT", "SIGNATURE"]) assert.equal(searchHistory(events, { query }).matches, 0);
 });
 
-test("history queries find distant matches, exclude their own results and paginate against a stable snapshot", () => {
-  const events = [
-    event("tool.execution_start", { toolCallId: "original", toolName: "bash" }),
-    event("tool.execution_complete", { toolCallId: "original", success: true,
-      result: { content: "NEEDLE first\n" + "x".repeat(10000) + "\nNEEDLE actual crash" } }),
-  ];
+test("recovery exposes recorded failure metadata in query and call-ID results", () => {
+  const error = { code: "FAILED", message: "failed-diagnostic" };
+  for (const result of ["partial-evidence", { content: "partial-evidence" }]) {
+    const events = [event("tool.execution_complete", { toolCallId: "failed", success: false, error, result })];
+    for (const args of [{ callId: "failed" }, { query: "partial-evidence" }, { query: "failed-diagnostic" }]) {
+      const record = JSON.parse(searchHistory(events, args).content);
+      assert.equal(record.success, false);
+      assert.deepEqual(record.error, error);
+    }
+  }
+  const unknown = JSON.parse(searchHistory([event("tool.execution_complete", {
+    toolCallId: "unknown", result: { content: "unknown" },
+  })], { callId: "unknown" }).content);
+  assert(!Object.hasOwn(unknown, "success"));
+});
+
+test("history pagination reconstructs large output against a stable event snapshot", () => {
+  const events = fixture();
+  let offset = 0;
+  let beforeEventId;
+  let restored = "";
+  do {
+    const page = searchHistory(events, { callId: "call-1", offset, beforeEventId, limit: 400 });
+    assert(page.content.length <= 400);
+    restored += page.content;
+    offset = page.nextOffset;
+    beforeEventId = page.beforeEventId;
+    events.push(user("Newer input must not shift a page"));
+  } while (offset !== null);
+  assert.equal(JSON.parse(restored).content, conversation(fixture()).messages[2].content);
+});
+
+test("search returns distant matches, excludes old recovery output and rejects invalid pagination", () => {
+  const events = [event("tool.execution_complete", { toolCallId: "original", success: true,
+    result: { content: "NEEDLE first\n" + "x".repeat(10000) + "\nNEEDLE actual crash" } })];
   const first = searchHistory(events, { query: "needle", limit: 100 });
   assert.equal(first.matches, 2);
-  const own = event("tool.execution_start", { toolCallId: "history", toolName: "context_history" });
-  events.push(own, event("tool.execution_complete", { toolCallId: "history", success: true, result: { content: JSON.stringify(first) } }));
+  events.push(event("tool.execution_start", { toolCallId: "history", toolName: "context_history" }),
+    event("tool.execution_complete", { toolCallId: "history", result: { content: JSON.stringify(first) } }));
   assert.equal(searchHistory(events, { query: "needle" }).matches, 2);
-  events.push(user("NEEDLE newer input"));
   const rest = searchHistory(events, { query: "needle", offset: first.nextOffset, beforeEventId: first.beforeEventId });
-  assert.equal(rest.matches, 2);
   assert(rest.content.includes("actual crash"));
-  assert.throws(() => searchHistory(events, { query: "needle", offset: 10 }), /beforeEventId/);
-  assert.throws(() => searchHistory(events), /Provide query/);
-  assert.equal(searchHistory(events, { query: "needle", callId: "   " }).matches, 3);
+  for (const args of [{}, { query: "x", offset: 1 }, { query: "x", limit: 12001 }, { query: "x", offset: -1 },
+    { query: "x", beforeEventId: "missing" }]) assert.throws(() => searchHistory(events, args));
+  assert.equal(searchHistory(events, { query: "absent" }).matches, 0);
+});
+
+test("large history pages stay bounded without retaining a joined result buffer", () => {
+  const events = [1, 2].map((number) => event("tool.execution_complete", {
+    toolCallId: `large-${number}`, success: true, result: { detailedContent: String(number).repeat(2 * 1024 * 1024) },
+  }));
+  const first = searchHistory(events, { callId: "large-1", limit: 100 });
+  const next = searchHistory(events, { callId: "large-1", limit: 100, offset: first.nextOffset, beforeEventId: first.beforeEventId });
+  const full = JSON.stringify({ eventId: events[0].id, type: events[0].type, callId: "large-1", success: true, content: events[0].data.result.detailedContent });
+  assert.equal(first.content + next.content, full.slice(0, 200));
+  assert.equal(searchHistory(events, { query: "1111", limit: 100 }).content.length, 100);
 });

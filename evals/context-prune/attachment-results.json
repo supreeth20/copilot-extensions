@@ -1,0 +1,132 @@
+{
+  "checks": [
+    {
+      "name": "startup:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "attachments:drop-explicitly-refused",
+      "pass": true
+    },
+    {
+      "name": "attachments:refused-drop-does-not-generate-or-clear",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "attachments:exact-selection-text-path-and-range",
+      "pass": true
+    },
+    {
+      "name": "attachments:binary-tool-description-retained",
+      "pass": true
+    },
+    {
+      "name": "attachments:binary-attachment-name-retained",
+      "pass": true
+    },
+    {
+      "name": "attachments:binary-bytes-not-copied",
+      "pass": true
+    },
+    {
+      "name": "attachments:inspection-gap-explicit",
+      "pass": true
+    },
+    {
+      "name": "attachments:recorded-asset-references-retained",
+      "pass": true
+    },
+    {
+      "name": "attachments:summary-retains-approval-and-status",
+      "pass": true
+    },
+    {
+      "name": "attachments:summary-retains-evidence-references",
+      "pass": true
+    },
+    {
+      "name": "attachments:summary-retains-inspection-gap",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:same-session",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:exact-active-summary",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:original-evidence-recoverable",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:all-prior-checkpoints-intact",
+      "pass": true
+    },
+    {
+      "name": "attachments:original-attachment-event-intact-after-resume",
+      "pass": true
+    },
+    {
+      "name": "attachments:original-selection-recoverable",
+      "pass": true
+    },
+    {
+      "name": "attachments:all-generation-workers-deleted",
+      "pass": true
+    },
+    {
+      "name": "attachments:workers-executed-no-tools",
+      "pass": true
+    },
+    {
+      "name": "owned-parent-session-deleted-from-history",
+      "pass": true
+    },
+    {
+      "name": "owned-parent-client-stopped",
+      "pass": true
+    }
+  ],
+  "metrics": {
+    "generationCalls": 1,
+    "workerToolExecutions": 0,
+    "deletedWorkers": 1,
+    "diagnosticHandlerCalls": 1,
+    "diagnosticHandlerFailures": 0,
+    "deletedParentSessions": 1,
+    "compactionRounds": [],
+    "recordedAttachmentAssetReferences": 1
+  },
+  "passed": 29,
+  "failed": 0
+}

@@ -1,0 +1,525 @@
+{
+  "checks": [
+    {
+      "name": "startup:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "literal-prefix-retained-and-searchable",
+      "pass": true
+    },
+    {
+      "name": "first-drop:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "first-drop:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "first-drop:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "first-drop:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "first-drop:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "first-drop:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "first-drop:exact-narrative-retention",
+      "pass": true
+    },
+    {
+      "name": "literal-prefix-survives-applied-replacement",
+      "pass": true
+    },
+    {
+      "name": "tool-replaced-with-finding",
+      "pass": true
+    },
+    {
+      "name": "first-resume:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "first-resume:same-session",
+      "pass": true
+    },
+    {
+      "name": "original-evidence-recovers-after-resume",
+      "pass": true
+    },
+    {
+      "name": "recorded-error-and-status-recover",
+      "pass": true
+    },
+    {
+      "name": "second-drop:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "second-drop:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "second-drop:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "second-drop:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "second-drop:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "second-drop:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "second-drop:exact-narrative-retention",
+      "pass": true
+    },
+    {
+      "name": "prior-finding-retained-once",
+      "pass": true
+    },
+    {
+      "name": "raw-tool-not-resurrected",
+      "pass": true
+    },
+    {
+      "name": "second-resume:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "second-resume:same-session",
+      "pass": true
+    },
+    {
+      "name": "original-evidence-recovers-after-second-resume",
+      "pass": true
+    },
+    {
+      "name": "compact:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "compact:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "compact:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "compact:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "compact:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "compact:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "compact-has-required-sections",
+      "pass": true
+    },
+    {
+      "name": "compact-retains-region",
+      "pass": true
+    },
+    {
+      "name": "compact:one-summary-no-nested-transcript",
+      "pass": true
+    },
+    {
+      "name": "compact:six-required-sections",
+      "pass": true
+    },
+    {
+      "name": "compact:stable-identifiers",
+      "pass": true
+    },
+    {
+      "name": "compact:deployment-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact:network-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact:latest-failure-in-state",
+      "pass": true
+    },
+    {
+      "name": "compact:latest-next-step",
+      "pass": true
+    },
+    {
+      "name": "compact:unverified-stays-unverified",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-1:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-1:same-session",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-1:exact-active-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-1:original-evidence-recoverable",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-1:all-prior-checkpoints-intact",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:input-starts-with-previous-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:only-one-previous-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:no-raw-tool-messages-reintroduced",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:one-summary-no-nested-transcript",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:six-required-sections",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:stable-identifiers",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:deployment-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:network-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:latest-failure-in-state",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:latest-next-step",
+      "pass": true
+    },
+    {
+      "name": "compact-round-2:unverified-stays-unverified",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-2:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-2:same-session",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-2:exact-active-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-2:original-evidence-recoverable",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-2:all-prior-checkpoints-intact",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:input-starts-with-previous-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:only-one-previous-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:no-raw-tool-messages-reintroduced",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:one-summary-no-nested-transcript",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:six-required-sections",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:stable-identifiers",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:deployment-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:network-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:latest-failure-in-state",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:latest-next-step",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:unverified-stays-unverified",
+      "pass": true
+    },
+    {
+      "name": "compact-round-3:new-approval-boundary-retained",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-3:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-3:same-session",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-3:exact-active-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-3:original-evidence-recoverable",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-3:all-prior-checkpoints-intact",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:input-starts-with-previous-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:only-one-previous-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:no-raw-tool-messages-reintroduced",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:one-summary-no-nested-transcript",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:six-required-sections",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:stable-identifiers",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:deployment-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:network-still-prohibited",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:latest-failure-in-state",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:latest-next-step",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:unverified-stays-unverified",
+      "pass": true
+    },
+    {
+      "name": "compact-round-4:new-approval-boundary-retained",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-4:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-4:same-session",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-4:exact-active-summary",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-4:original-evidence-recoverable",
+      "pass": true
+    },
+    {
+      "name": "compact-resume-4:all-prior-checkpoints-intact",
+      "pass": true
+    },
+    {
+      "name": "four-consecutive-live-compactions",
+      "pass": true
+    },
+    {
+      "name": "all-generation-workers-deleted",
+      "pass": true
+    },
+    {
+      "name": "workers-executed-no-tools",
+      "pass": true
+    },
+    {
+      "name": "owned-parent-session-deleted-from-history",
+      "pass": true
+    },
+    {
+      "name": "owned-parent-client-stopped",
+      "pass": true
+    }
+  ],
+  "metrics": {
+    "generationCalls": 6,
+    "workerToolExecutions": 0,
+    "deletedWorkers": 6,
+    "diagnosticHandlerCalls": 2,
+    "diagnosticHandlerFailures": 1,
+    "deletedParentSessions": 1,
+    "compactionRounds": [
+      {
+        "round": 1,
+        "inputCharacters": 3213,
+        "summaryCharacters": 2042,
+        "previousStepReferenced": false
+      },
+      {
+        "round": 2,
+        "inputCharacters": 2979,
+        "summaryCharacters": 2009,
+        "previousStepReferenced": true
+      },
+      {
+        "round": 3,
+        "inputCharacters": 3094,
+        "summaryCharacters": 2191,
+        "previousStepReferenced": false
+      },
+      {
+        "round": 4,
+        "inputCharacters": 3128,
+        "summaryCharacters": 2082,
+        "previousStepReferenced": false
+      }
+    ],
+    "sdkRecordedCustomExceptionMarker": false
+  },
+  "passed": 121,
+  "failed": 0
+}
