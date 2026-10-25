@@ -1,0 +1,231 @@
+{
+  "evidenceMode": "loopback-native-wire-capture",
+  "checks": [
+    {
+      "name": "native-image-present-in-initial-model-request",
+      "pass": true
+    },
+    {
+      "name": "selected-text-present-in-initial-model-request",
+      "pass": true
+    },
+    {
+      "name": "original-attachment-event-survives-clear-and-restart",
+      "pass": true
+    },
+    {
+      "name": "original-asset-bytes-survive-clear-and-restart",
+      "pass": true
+    },
+    {
+      "name": "bare-clear-does-not-automatically-reattach-image",
+      "pass": true
+    },
+    {
+      "name": "journal-bytes-reattached-as-native-image",
+      "pass": true
+    },
+    {
+      "name": "reattached-native-image-survives-another-cold-resume",
+      "pass": true
+    },
+    {
+      "name": "extension-push-does-not-trigger-model-generation",
+      "pass": true
+    },
+    {
+      "name": "extension-push-delivers-original-image-bytes-to-host",
+      "pass": true
+    },
+    {
+      "name": "composer-push-alone-does-not-restore-model-image",
+      "pass": true
+    },
+    {
+      "name": "host-forwarded-image-restored-natively",
+      "pass": true
+    },
+    {
+      "name": "pushed-composer-event-is-not-persisted",
+      "pass": true
+    },
+    {
+      "name": "composer-push-is-not-automatically-reemitted-on-resume",
+      "pass": true
+    },
+    {
+      "name": "extension-can-recover-and-repush-after-another-restart",
+      "pass": true
+    },
+    {
+      "name": "recorded-selection-restored-to-model-input",
+      "pass": true
+    },
+    {
+      "name": "disposable-session-deleted",
+      "pass": true
+    },
+    {
+      "name": "runtime-stopped-cleanly",
+      "pass": true
+    }
+  ],
+  "observations": [
+    {
+      "phase": "initial",
+      "requestCount": 1,
+      "replyReceived": true
+    },
+    {
+      "phase": "journal",
+      "recordedAssetReference": true,
+      "recordedInlineBytes": false,
+      "binaryAssetEvents": 1,
+      "exactOriginalBytesRecoverable": true
+    },
+    {
+      "phase": "bare-clear-resume",
+      "requestCount": 1,
+      "replyReceived": true
+    },
+    {
+      "phase": "asset-reference-reattach",
+      "requestCount": 1,
+      "replyReceived": true
+    },
+    {
+      "phase": "asset-reference-reattach",
+      "accepted": true
+    },
+    {
+      "phase": "asset-reference-result",
+      "imageSent": true
+    },
+    {
+      "phase": "journal-bytes-reattach",
+      "requestCount": 1,
+      "replyReceived": true
+    },
+    {
+      "phase": "reattached-image-cold-resume",
+      "requestCount": 1,
+      "replyReceived": true
+    },
+    {
+      "phase": "control-connection-composer-push",
+      "accepted": false,
+      "errorClass": "_ResponseError",
+      "message": "session.extensions.sendAttachmentsToMessage may only be called from an extension-owned connection."
+    },
+    {
+      "phase": "extension-discovery",
+      "extensions": [
+        {
+          "name": "attachment-probe",
+          "source": "user",
+          "status": "starting"
+        }
+      ]
+    },
+    {
+      "phase": "extension-connection-composer-push",
+      "commandAccepted": true
+    },
+    {
+      "phase": "push-without-host-forwarding",
+      "requestCount": 1,
+      "replyReceived": true
+    },
+    {
+      "phase": "host-forwards-pushed-attachment",
+      "requestCount": 1,
+      "replyReceived": true
+    },
+    {
+      "phase": "recovered-push-after-restart",
+      "newPushes": 1
+    },
+    {
+      "phase": "selection-reattach",
+      "requestCount": 1,
+      "replyReceived": true
+    }
+  ],
+  "requests": [
+    {
+      "phase": "initial",
+      "images": [
+        {
+          "type": "image_url",
+          "sha256": "cf472dbcd32c5946c40a97d54194bc9cc95e31e9c609cb5b0ab8f9f0db014677"
+        }
+      ],
+      "matchingFixtureImages": 1,
+      "selectionTextPresent": true
+    },
+    {
+      "phase": "bare-clear-resume",
+      "images": [],
+      "matchingFixtureImages": 0,
+      "selectionTextPresent": false
+    },
+    {
+      "phase": "asset-reference-reattach",
+      "images": [
+        {
+          "type": "image_url",
+          "sha256": "cf472dbcd32c5946c40a97d54194bc9cc95e31e9c609cb5b0ab8f9f0db014677"
+        }
+      ],
+      "matchingFixtureImages": 1,
+      "selectionTextPresent": false
+    },
+    {
+      "phase": "journal-bytes-reattach",
+      "images": [
+        {
+          "type": "image_url",
+          "sha256": "cf472dbcd32c5946c40a97d54194bc9cc95e31e9c609cb5b0ab8f9f0db014677"
+        }
+      ],
+      "matchingFixtureImages": 1,
+      "selectionTextPresent": false
+    },
+    {
+      "phase": "reattached-image-cold-resume",
+      "images": [
+        {
+          "type": "image_url",
+          "sha256": "cf472dbcd32c5946c40a97d54194bc9cc95e31e9c609cb5b0ab8f9f0db014677"
+        }
+      ],
+      "matchingFixtureImages": 1,
+      "selectionTextPresent": false
+    },
+    {
+      "phase": "push-without-host-forwarding",
+      "images": [],
+      "matchingFixtureImages": 0,
+      "selectionTextPresent": false
+    },
+    {
+      "phase": "host-forwards-pushed-attachment",
+      "images": [
+        {
+          "type": "image_url",
+          "sha256": "cf472dbcd32c5946c40a97d54194bc9cc95e31e9c609cb5b0ab8f9f0db014677"
+        }
+      ],
+      "matchingFixtureImages": 1,
+      "selectionTextPresent": false
+    },
+    {
+      "phase": "selection-reattach",
+      "images": [],
+      "matchingFixtureImages": 0,
+      "selectionTextPresent": true
+    }
+  ],
+  "passed": 17,
+  "failed": 0
+}

@@ -32,7 +32,7 @@ const ORACLES = {
   concurrent: "Only one simultaneous command can clear; cancel cannot interrupt clearing after it starts.",
   mismatch: "Checkpoint mismatch fails without clear; a new explicit command can save a fresh checkpoint.",
   uncertain: "A clear RPC failure is ambiguous, mandates reload and cannot be retried.",
-  attachments: "Drop refuses binary evidence while compact remains available.",
+  attachments: "Both reductions preserve document references without relying on model-written prose.",
   separation: "Tool findings and working-state summaries are mutually exclusive inputs.",
   recoveryFailure: "Recovering a failed tool retains both its textual evidence and error diagnostics.",
   semanticRounds: "Semantic multi-round fidelity holds independently of serialized JSON key order.",
@@ -94,6 +94,7 @@ function harness(events = baseline()) {
       metadata: { isProcessing: async () => ({ processing: state.processing }) },
       log: async () => { state.trace.push("log"); },
       workspaces: {
+        getWorkspace: async () => ({ workspace: { cwd: "/synthetic" } }),
         addSummary: async ({ content }) => {
           state.trace.push("save");
           const number = state.checkpoints.size + 1;
@@ -360,12 +361,15 @@ test(ORACLES.uncertain, async () => {
 });
 
 test(ORACLES.attachments, async () => {
-  const events = baseline();
-  events[0].data.attachments = [{ type: "file", path: "synthetic.png" }];
-  const h = harness(events);
-  await assert.rejects(h.prepare(), /attachments/);
-  await h.prepare("compact");
-  assert.equal(h.state.requests.length, 1);
+  for (const mode of ["tools", "compact"]) {
+    const events = baseline();
+    events[0].data.attachments = [{ type: "file", path: "synthetic.pdf" }];
+    const h = harness(events);
+    await h.prepare(mode);
+    assert.equal(h.state.requests.length, 1);
+    assert.equal(conversation(h.state.events).attachments[0].path, "/synthetic/synthetic.pdf");
+    assert.match([...h.state.checkpoints.values()][0], /reread each referenced path/);
+  }
 });
 
 test(ORACLES.separation, async () => {

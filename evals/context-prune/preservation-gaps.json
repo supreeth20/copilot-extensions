@@ -1,0 +1,72 @@
+{
+  "productionCommitAudited": "af45d9fd5a5e72db5e1dd4c9630c5b0588e43408",
+  "scope": "Baseline preservation audit plus a subsequent file-reference recovery update; native attachment experiments are distinct from the installed recovery contract",
+  "workingTreeUpdate": "Both commands preserve code-owned file references and recoverable pasted bytes. native-reference-results.json records 63 passing SDK/model checks rerun after the saved-copy validation fix, including deleted image source recovery and native pasted text after drop, two compacts and cold resumes; 140 current regression/independent tests pass, including PDF/text replay integrity and mutable original files. attachment-path-results.json retains the earlier 44-check run. Native composer replay is not implemented.",
+  "nativePasteUpdate": "Actual bracketed large-text paste and macOS clipboard-image Ctrl+V passed 20 TUI checks through drop, compact and cold resumes. The two hardening gaps discovered in that historical run are now addressed in code; the original report is not a rerun of the new implementation.",
+  "resolvedHardeningGaps": [
+    {
+      "gap": "Native oversized-paste markers were not in the code-owned reference list",
+      "resolution": "Parse native pasted_content markers deterministically from user messages into the persisted registry, independently of generated summary prose. Retain existing session-owned text files without copying their contents."
+    },
+    {
+      "gap": "Native clipboard-image file attachments initially retained temporary paths",
+      "resolution": "Materialize recorded image bytes into private content-addressed session files before clearing, even for file attachments whose original path has disappeared. Retain ordinary document paths without snapshotting them."
+    }
+  ],
+  "confirmed": [
+    {
+      "gap": "Native attachments are not automatically restored by the current extension",
+      "evidence": "clearContext accepts a text seed. PNG reattachment was separately proved feasible. The current working tree instead preserves document paths and saves recoverable pasted bytes for rereading in both modes; native attachment messages are not automatically replayed.",
+      "classification": "Chosen file-reference recovery contract, not an inherent inability to restore stored assets"
+    },
+    {
+      "gap": "Media formats do not all follow the working PNG path",
+      "evidence": "A PDF blob did not become a native document block even before clearing, although its inline bytes survived in the journal. A real-model path-backed PDF probe with tools disabled also returned NONE before and after reattachment and did not persist original file bytes.",
+      "classification": "Observed baseline delivery/configuration limitation, not a demonstrated regression caused by clearing; other document-reader/provider routes remain unverified"
+    },
+    {
+      "gap": "Composer pushes are transient host events, not persisted model messages",
+      "evidence": "The SDK declares session.extensions.attachments_pushed ephemeral. An extension can recover bytes and emit a push without inference; the host must forward it with a user message. A resume-safe implementation needs a durable attachment manifest and requeue logic.",
+      "classification": "Integration requirement; actual TUI exit/resume restoration remains unverified"
+    },
+    {
+      "gap": "The retained projection is not the complete native transcript",
+      "evidence": "retainedMessage excludes assistant.serverTools. A synthetic provider-hosted result with text SERVER_ONLY_EVIDENCE_41 is absent from both drop and compact inputs. Events with agentId are excluded as well; only parent-visible results are retained.",
+      "classification": "Confirmed projection omissions; provider-specific payload fidelity and subagent-only history are not guaranteed"
+    },
+    {
+      "gap": "Reduction is not guaranteed to make context smaller",
+      "evidence": "A synthetic projected conversation of 185 characters accepts a replacement of 2209 characters. No positive token or character savings threshold is checked.",
+      "classification": "Confirmed missing size check; character measurement is not a token measurement"
+    },
+    {
+      "gap": "A replacement does not restore native roles or provider-private reasoning",
+      "evidence": "replacement serializes retained entries into one string that clearContext seeds as a user message. Readable thinking remains labeled historical text. Encrypted state, signatures and provider item identities are not restored.",
+      "classification": "Deliberate API/representation limitation"
+    },
+    {
+      "gap": "Summary and finding faithfulness is model-dependent",
+      "evidence": "Validation checks schema, call coverage, section presence and per-finding character bounds; it does not verify factual completeness. Consecutive compactions summarize the prior summary plus new work, not omitted original evidence.",
+      "classification": "Known semantic limitation; passing fixtures do not prove arbitrary-session fidelity"
+    },
+    {
+      "gap": "Generation has no input-budget preflight or chunking",
+      "evidence": "runtime supplies the complete projected active input plus instructions to a single isolated worker. There is no measured prompt-budget or replacement-size check; worker model generation has a 180-second timeout.",
+      "classification": "Confirmed implementation limitation; maximum-context overflow has not been live-stress-tested"
+    },
+    {
+      "gap": "Recovery and external state are not guaranteed",
+      "evidence": "The worker cannot read plan files, task histories or referenced artifacts. Native history may not index raw tool output, binary assets or reasoning. Expired spill files and bytes omitted by upstream persistence cannot be recreated. A current path is not necessarily its original file contents.",
+      "classification": "Best-effort evidence recovery, not a lossless archive"
+    }
+  ],
+  "notEstablished": [
+    "Atomicity of the final guard/history check and clear RPC under a real concurrent-input/native-compaction race",
+    "All provider-specific reasoning/server-tool event formats",
+    "Automatic native restoration across the actual interactive CLI exit/resume workflow",
+    "Audio/video attachment interpretation, oversized or omitted binary assets, other document formats and PDF document-reading-tool routes",
+    "Arbitrary custom-provider authentication/configuration reproduction; current worker refuses an unreproduced configuration",
+    "Complete semantic fidelity or positive token savings for every conversation"
+  ],
+  "priorEvaluationDisclosure": "Earlier 29-check attachment evaluations established metadata/selection input, summary references, checkpoints and original-event survival. They did not establish that a resumed model could access original native attachment content."
+}

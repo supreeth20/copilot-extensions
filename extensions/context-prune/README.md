@@ -13,7 +13,8 @@ User-triggered, code-orchestrated context reduction for Copilot CLI 1.0.103.
 Each reduction command performs this pipeline in SDK code:
 
 1. Refuse busy/unsafe state and snapshot the existing journal's event IDs.
-2. Ask an isolated, tool-free SDK worker for structured JSON text.
+2. Prepare durable attachment references, then ask an isolated, tool-free SDK
+   worker for structured JSON text.
 3. Recheck state and validate the returned findings or six-section summary.
 4. Assemble the replacement deterministically, save an exact checkpoint, and read-verify it.
 5. Recheck the snapshot, apply the replacement, and print same-session reload instructions.
@@ -23,9 +24,10 @@ Drop mode supplies only tool evidence to its worker, not narrative to rewrite.
 Only compact mode loads the `context-compaction` skill. The skill governs text
 content, not checkpointing, recovery, or application.
 
-The production code has four modules: `extension.mjs` wires the SDK,
+The production code has five modules: `extension.mjs` wires the SDK,
 `runtime.mjs` owns the command pipeline, `generation.mjs` owns isolated workers,
-and `context.mjs` projects/replays recorded context. `test-support/history.mjs`
+`attachments.mjs` prepares durable file references, and `context.mjs` projects/replays
+recorded context. `test-support/history.mjs`
 is only an evaluation helper; production exposes and loads no custom history
 search implementation. Legacy journal formats remain readable.
 
@@ -66,8 +68,8 @@ examples of their markers are ordinary prose.
 
 `clearContext` takes one string, not native message edits: retained messages and
 thinking become labeled historical text, not restored roles or private reasoning
-state. Tool-only mode refuses attachments/binary evidence rather than flattening
-them. Findings are limited to 12000 characters each; schema/coverage checks cannot
+state. Attachments are preserved as recoverable references, not native message
+replays. Findings are limited to 12000 characters each; schema/coverage checks cannot
 prove semantic completeness.
 
 Compaction includes recorded attachment text and metadata, including selections,
@@ -77,6 +79,35 @@ inline binary payloads are not copied into text. The worker cannot inspect binar
 bytes or read referenced files. The skill requires preserving relevant attachment
 requirements and references, explicitly distinguishing missing/uninspected content
 from verified evidence. Native attachment roles and visual content are not restored.
+
+Both modes retain a code-owned attachment-reference list in the replacement and
+exact checkpoint, so a model cannot accidentally omit paths from a summary.
+Ordinary document paths are retained without reading or freezing their contents.
+Relative paths are resolved against the session workspace's working directory.
+Native `<pasted_content file="...">` markers in user messages are parsed
+deterministically into this list without changing the original message; their
+existing session-owned text files need no additional copy. The registry survives
+subsequent reductions even if generated summaries omit every path.
+Pasted bytes, binary tool results and recorded binary assets without a durable
+file reference are saved as content-addressed files under the session workspace's
+`files/context-prune-attachments/` directory, with private file permissions.
+Recorded image bytes take precedence over an image attachment's file path, so
+clipboard images are saved before clearing even if their temporary PNG is gone.
+These files remain for later reductions/checkpoints and last as long as that
+session workspace; they are not a separate transcript archive.
+
+The continuing agent must reread relevant paths with a suitable permitted
+document/image/file tool before relying on their contents. Files can change or
+disappear; unknown formats may need a document reader, and missing original bytes
+are explicitly marked unavailable. Saving bytes is neither inspection nor native
+reattachment. Invalid bytes or persistence failures stop before clearing.
+On later reductions, content-addressed saved copies are checked against their
+recorded checksum regardless of format: corruption stops before clearing, and
+missing copies are marked unavailable. Ordinary source files remain mutable;
+their current contents are not required to match original attachment metadata.
+Native composer replay is deliberately not used. Separate SDK experiments proved
+PNG reattachment feasible, but actual TUI native-attachment restoration remains
+unverified and is not required by this file-reference approach.
 
 Original journals are never rewritten. The retained context instructs the agent
 to query native session history (`session_store_sql`) when information is missing.

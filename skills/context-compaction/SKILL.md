@@ -37,6 +37,11 @@ names, provenance, asset IDs and resource URIs. File references are not file
 contents. Binary bytes are unavailable to this text-only worker; do not infer
 their contents from names or descriptions. Preserve unresolved inspection needs
 and recovery references, and state when the original evidence is unavailable.
+For relevant attachment references, retain the path, type and why the document
+matters. Instruct the continuing agent to reread it with an appropriate permitted
+tool before relying on its contents. A saved file or path is not proof of inspection
+or native reattachment; files may change or disappear. Code preserves the complete
+attachment reference list separately, so do not copy that whole list into prose.
 
 Check every unfinished obligation and live constraint against the summary.
 Choose length based on necessary state,

@@ -51,12 +51,29 @@ the existing conversation; it does not create a new session.
 ### Limitations
 
 Retained messages and readable thinking become labeled historical text, not native
-message roles or restored private reasoning state. Tool-only mode refuses
-attachments/binary results. Compaction includes recorded attachment text and
-metadata, but its text-only worker cannot inspect binary bytes or read referenced
-files; summaries must retain the relevant recovery references and evidence gaps.
+message roles or restored private reasoning state. Both modes preserve attachment
+references in code, independently of generated prose. Existing documents retain
+their paths; recoverable pasted/binary bytes are saved privately under the session's
+`files/context-prune-attachments/` directory. The continuing agent is instructed
+to reread relevant files with an appropriate permitted tool before relying on
+their contents. Original files may change or disappear, and absent bytes remain
+explicit recovery gaps. The text-only generation worker cannot inspect these files.
 Summary fidelity depends on the model, and history cannot
 recover expired artifacts that Copilot itself truncated.
+
+Native large-paste markers are parsed in code into the same reference list, so
+their session-owned text paths do not depend on generated summaries. Recorded
+image bytes are saved proactively even when the attachment also has a temporary
+file path. Ordinary document paths are not copied or frozen. See the evaluation
+documentation for recovery tests and the earlier native TUI observations.
+
+**Native attachment restoration is not implemented in this extension.** Separate
+SDK experiments show that stored PNG assets can be reattached by asset reference
+or original bytes after clearing and restarting. That requires an additional
+native attachment send, or an extension composer push forwarded by the host;
+putting an asset ID in the retained text does not do it. The implementation instead
+uses file-reference recovery, not composer replay. See the evaluation documentation
+and `evals/context-prune/preservation-gaps.json` for the tested scope and remaining gaps.
 
 Generation uses the current model, context tier and reasoning effort with normal
 Copilot authentication. Custom provider configurations are not copied; a
@@ -82,9 +99,12 @@ node --test evals/context-prune/independent.test.mjs
 
 See [independent evaluation instructions](evals/context-prune/README.md) for
 live SDK checks and explicitly classified upstream limitations. The combined
-regression/independent suite has 112 passing tests; the code-owned live SDK runner
-passes 121 checks, including four consecutive compactions with cold resumes.
-The focused attachment compaction/cold-resume scenario passes 29 checks.
+regression/independent suite has 140 passing tests. The focused attachment-path
+scenario passes 63 real SDK/model checks, including recovering a deleted image
+source from recorded bytes and rereading native pasted text after drop, two
+compactions and cold resumes. The earlier
+code-owned runner passed 121 repeated-reduction checks, including four consecutive
+compactions; that is a historical result, not a rerun of the latest change.
 Separate local live evaluations also
 covered repeated/mixed reductions, recorded reasoning, actual slash commands,
 history recovery, and same-session process resume. Private session journals and

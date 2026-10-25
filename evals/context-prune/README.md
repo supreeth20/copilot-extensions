@@ -26,10 +26,20 @@ COPILOT_EVAL_CLI="$(command -v copilot)" node evals/context-prune/live-sdk.mjs
 
 Run the focused attachment scenario instead with `--attachments`. It sends a
 synthetic code selection and image, records a binary diagnostic result, verifies
-that drop refuses them, compacts through a real isolated worker, and cold-resumes
-the same session. Checks cover exact selection text/path/range, binary provenance,
+that drop preserves references and saves recoverable bytes, compacts through real
+isolated workers, and cold-resumes the same session after each reduction.
+It also includes an original text document and pasted text: the file is changed
+after each reduction, and the real model must call the permitted fixture reader
+and report the new contents and original pasted text from their retained paths.
+Checks cover exact selection text/path/range, binary provenance,
 absence of inline image bytes in generation input, retained requirements and
 evidence references in the summary, checkpoints/history, and native session cleanup.
+The scenario additionally sends a native-format oversized-paste marker and a
+file-backed image with a recorded asset, deletes the image source before the
+first reduction, and verifies the durable copy and text references through drop,
+two compacts and cold resumes. The model rereads the native pasted text as well.
+The reader is restricted to this run's synthetic text attachments; this is
+not proof that arbitrary PDFs can be read without an appropriate document tool.
 
 The live runner defaults to `gpt-6-astra`; `COPILOT_EVAL_MODEL` overrides it.
 It invokes the repository's handlers through real SDK slash-command dispatch,
@@ -50,18 +60,63 @@ after verifying its owned process has stopped.
 
 | Suite | Pass | Fail |
 | --- | ---: | ---: |
-| Regression and migrated independent assertions combined | 112 | 0 |
-| Real SDK command-owned integration, including consecutive compactions | 121 | 0 |
-| Focused real SDK attachment compaction and cold resume | 29 | 0 |
-| Actual interactive CLI drop, cold resume and compact | 16 | 0 |
+| Regression and migrated independent assertions combined | 140 | 0 |
+| Real SDK attachment paths, deleted image source, drop/two compacts and cold resumes | 63 | 0 |
+| Earlier actual TUI oversized paste and clipboard image, drop/compact and cold resumes | 20 | 0 |
 
-After simplification, both SDK scenarios were rerun: 121 repeated-reduction
-checks and 29 attachment checks passed, alongside all 112 regressions. An
+`native-reference-results.json` records the latest hardening implementation;
+`attachment-path-results.json` retains the earlier 44-check file-reference run.
+Original document paths and saved pasted text survived both reduction modes and
+cold resumes; the real model reread them through the fixture tool and returned
+the updated file contents rather than stale content. Pasted image and binary-tool
+bytes were also saved and checked byte-for-byte, without claiming new visual
+interpretation coverage. All three generation workers and the parent were deleted.
+Unit tests additionally cover missing evidence, invalid bytes, persistence failure,
+private file permissions, corrupted cache detection, and repeated mixed reductions
+whose summaries omit the references entirely.
+Saved PDF/text references are replayed without journal payloads to verify that
+corruption prevents generation and clearing, deletion is disclosed, and restored
+original bytes recover availability. Ordinary document/image paths may change
+without failing checks against original checksum or length metadata.
+
+`native-paste-results.json` records the actual interactive input paths, not
+SDK-created stand-ins: bracketed paste of 133977 bytes/2502 lines and native
+Ctrl+V of a macOS clipboard PNG. The large paste became a session-owned
+`files/paste-*.txt` file referenced by a `<pasted_content file="...">` marker in
+`user.message.content`, with no attachment object. The clipboard image became a
+`file` attachment pointing into the OS temporary directory, plus a persisted
+binary-asset reference. Both files survived ordinary CLI exit, and the real model
+used native `view` to reread them after drop and compact with cold resumes.
+Text verification checked both end markers; image verification checked the
+actual bytes of the opened file and real quadrant recognition, accepting either
+the original path or a byte-identical saved copy.
+
+That historical TUI sequence exposed two gaps, now addressed in code: native
+large-paste markers become code-owned references, and recorded image bytes are
+saved proactively instead of retaining only a temporary path. The original
+20-check report remains unchanged evidence of the earlier implementation, not a
+new TUI run or a temporary-file-deletion test. New runtime tests intentionally
+omit all paths from summaries and repeat mixed reductions; the extended SDK
+scenario deletes its file-backed image before the first reduction and verifies
+recovery from the recorded asset. Neither test claims automatic native replay.
+
+The native TUI harness stayed in session-local artifacts. Its initial calibration
+handled the extension's permission prompt, included `context_commit` in the
+restricted tool allowlist, waited for final replies rather than intermediate
+tool-round ends, and allowed valid saved-copy reads instead of requiring only the
+original pathname. Earlier harness failures were not counted as product defects.
+The original clipboard was restored, owned sessions were deleted through native
+SDK APIs, and the owned test directories were removed.
+
+Before file-reference recovery was added, both SDK scenarios passed: 121 repeated-reduction
+checks and 29 attachment checks, alongside all 112 regressions. An
 independent code reviewer reported no significant issues. Production code shrank
 from 752 to 640 lines by removing the unused manifest builder and stage state,
 moving historical search into test support, and eliminating an extra event scan.
 Checkpoint verification, cancellation, authorization and legacy replay remain.
 The interactive CLI result below is historical, not a new TUI run.
+Those 121/29 checks and the 16-check interactive result were not rerun for the
+latest file-reference change.
 
 The live driver checks exact checkpoints, original journal survival, unchanged
 non-tool narrative, repeated findings, cold resume, recorded errors/status,
@@ -109,6 +164,52 @@ uninspected-content notice, and the skill requires retaining relevant attachment
 requirements, recovery references and evidence gaps. This does not restore native
 attachments or establish visual-content interpretation or universal summary
 fidelity.
+
+## Native attachment restoration experiments
+
+The earlier attachment suite tested metadata/selection preservation, references
+in summaries and original event survival. It did **not** establish that the model
+could see original native attachment content after replacement.
+
+Run `attachment-restoration.mjs` with the same SDK/CLI environment variables.
+By default it uses the real CLI/SDK with a loopback-only synthetic OpenAI-compatible
+provider to inspect actual outbound multimodal blocks and compare image hashes;
+the local provider replies ACK and is not an image-understanding model.
+`--real-model` instead cross-checks actual visual recognition with Astra.
+`--pdf` selects a PDF blob; `--pdf-file` selects a path-backed PDF. Those are
+distinct routes, and an unsupported initial baseline is not a restoration defect.
+The driver prints only synthetic observations and binary hashes, never raw model
+requests, authentication headers, native reasoning or session IDs.
+
+`attachment-restoration-wire-results.json` records 17 passing PNG/selection checks.
+`attachment-restoration-model-results.json` records 15 passing real-model checks.
+Both demonstrate that bare clear/resume does not restore the image, while
+explicit asset-reference and journal-byte reattachment work and survive another
+cold resume. The real model correctly identified all four large-image quadrants
+after restoration, and returned NONE with no native image.
+An initial 64-pixel visual fixture was unreliable even before clearing; its
+failed recognition was not reclassified as a preservation success. A 512-pixel
+fixture supplied the successful behavioral control.
+
+An actual disposable extension also recovered original bytes and pushed them to
+the host without starting a model turn. Push alone did not restore model access;
+the host had to include the pushed bundle in its next send. Push events were not
+persisted or automatically reemitted on restart; explicit recovery/repush worked.
+This is an SDK integration experiment, not a completed production/TUI feature.
+
+PDF probes did not pass native delivery: the PDF blob produced no native document
+block even before clearing, although its inline bytes survived in the journal.
+The path-backed PDF also returned NONE with the real model and tools disabled;
+its original bytes were not in the journal. These are unsupported baselines, not
+four newly demonstrated context-clearing defects. Different native-document
+providers or document-reading tools remain unverified. The portable observations
+and unsuccessful check counts are retained in
+`attachment-restoration-pdf-results.json`; PNG success is not generalized to PDFs.
+
+`preservation-gaps.json` distinguishes confirmed implementation limitations from
+untested cases, including omitted provider-hosted tool payloads, subagent-only
+history, unchecked replacement growth, lack of generator input budgeting, and
+best-effort native-history/artifact recovery.
 
 ## Historical results after retention fixes
 

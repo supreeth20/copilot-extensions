@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { conversation } from "./context.mjs";
 import { createContextPrune } from "./runtime.mjs";
 
@@ -7,7 +10,7 @@ const summary = ["Goal", "Constraints", "State", "Decisions", "Next", "Reference
   .map((heading) => `## ${heading}\nRetained ${heading.toLowerCase()}.`).join("\n\n");
 let sequence = 0;
 const event = (type, data = {}, extra = {}) => ({ id: `runtime-${++sequence}`, type, data, ...extra });
-function harness() {
+function harness(workspace) {
   const state = {
     events: [
       event("user.message", { content: "Private user narrative; preserve case; no deployment." }),
@@ -47,6 +50,7 @@ function harness() {
       tasks: { list: async () => state.tasks }, permissions: { pendingRequests: async () => state.permissions },
       metadata: { isProcessing: async () => ({ processing: state.processing }) },
       workspaces: {
+        getWorkspace: async () => ({ path: workspace, workspace: { cwd: "/fixture" } }),
         addSummary: async ({ content }) => {
           state.calls.push("checkpoint");
           if (state.failSave) throw new Error("save failed");
@@ -139,35 +143,144 @@ test("compact alone receives the skill and full active narrative", async () => {
   assert.deepEqual(conversation(h.state.events).messages, [{ role: "user", content: summary }]);
 });
 
-test("compact receives attachment requirements and binary recovery evidence that drop refuses", async () => {
-  const h = harness();
+for (const mode of ["tools", "compact"]) {
+test(`${mode} preserves attachment paths independently of model prose and saves pasted bytes`, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "context-runtime-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const h = harness(root);
   const selection = { type: "selection", displayName: "Review requirements", filePath: "/fixture/ReviewCase.ts",
     selection: { start: { line: 0, character: 0 }, end: { line: 2, character: 0 } },
     text: "Never deploy. Require REVIEW_ATTACHMENT_9 approval." };
   h.state.events[0].data.attachments = [
     selection,
     { type: "blob", displayName: "Review diagram", mimeType: "image/png", assetId: "sha256:review",
-      data: "ATTACHMENT_BINARY_BYTES" },
+      data: Buffer.from("ATTACHMENT_BINARY_BYTES").toString("base64") },
   ];
   h.state.events[2].data.result.binaryResultsForLlm = [
     { type: "image_ref", assetId: "sha256:tool-capture", mimeType: "image/png", byteLength: 10,
       description: "Unverified diagnostic capture", metadata: { path: "/fixture/capture.png" } },
   ];
   const original = structuredClone(h.state.events);
-  await assert.rejects(h.invoke("tools"), /use \/context-compact/);
-  assert.equal(h.state.requests.length, 0);
-  await h.invoke("compact");
+  await h.invoke(mode);
   const request = h.state.requests[0];
   const payload = JSON.parse(request.prompt.split("\n\n").at(-1));
-  assert.deepEqual(payload.messages[0].attachments[0], selection);
-  assert.equal(payload.messages[0].attachments[1].assetId, "sha256:review");
+  if (mode === "compact") {
+    assert.deepEqual(payload.messages[0].attachments[0], selection);
+    assert.equal(payload.messages[0].attachments[1].assetId, "sha256:review");
+    assert.equal(payload.attachmentReferences.length, 3);
+  } else {
+    assert.doesNotMatch(request.prompt, /Review requirements|sha256:review/);
+  }
   for (const evidence of ["sha256:tool-capture", "Unverified diagnostic capture", "/fixture/capture.png"]) {
     assert(request.prompt.includes(evidence));
   }
   assert.match(request.prompt, /not inspected|not available/i);
-  assert.match(request.prompt, /attachment/i);
+  if (mode === "compact") assert.match(request.prompt, /attachment/i);
   assert.doesNotMatch(request.prompt, /ATTACHMENT_BINARY_BYTES/);
   assert.deepEqual(h.state.events.slice(0, original.length), original);
+  const restored = conversation(h.state.events);
+  assert.equal(restored.attachments.length, 3);
+  assert.equal(restored.attachments[0].path, selection.filePath);
+  assert.equal(await readFile(restored.attachments[1].path, "utf8"), "ATTACHMENT_BINARY_BYTES");
+  assert.equal(restored.attachments[2].path, "/fixture/capture.png");
+  assert.match(h.state.checkpoints.get(0), /reread each referenced path/);
+});
+}
+
+test("missing attachment bytes are disclosed, not silently dropped or fabricated", async () => {
+  const h = harness();
+  h.state.events[0].data.attachments = [{ type: "blob", assetId: "missing", mimeType: "image/png" }];
+  await h.invoke();
+  assert.equal(conversation(h.state.events).attachments[0].unavailable, true);
+  assert.match(h.state.lastLog, /attachmentRecoveryGaps=1/);
+});
+
+test("attachment persistence failure prevents generation, checkpointing and clearing", async () => {
+  const h = harness();
+  h.state.events[0].data.attachments = [{ type: "blob", data: "cGRm" }];
+  await assert.rejects(h.invoke(), /local session workspace/);
+  assert(!h.state.calls.includes("generate") && !h.state.calls.includes("checkpoint") && !h.state.calls.includes("clear"));
+});
+
+for (const mimeType of ["application/pdf", "text/plain"]) {
+  test(`replayed saved ${mimeType} corruption blocks clear and deletion reports missing evidence`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "context-saved-replay-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const initial = harness(root);
+    initial.state.events[0].data.attachments = [{
+      type: "blob", mimeType, data: Buffer.from("original").toString("base64"),
+    }];
+    await initial.invoke("compact");
+    const [ref] = conversation(initial.state.events).attachments;
+    await writeFile(ref.path, "modified");
+    const corrupted = harness(root);
+    corrupted.state.events = structuredClone(initial.state.events);
+    await assert.rejects(corrupted.invoke("compact"), /Context was not cleared.*do not match/);
+    for (const call of ["generate", "checkpoint", "clear"]) assert(!corrupted.state.calls.includes(call));
+    await rm(ref.path);
+    const missing = harness(root);
+    missing.state.events = structuredClone(initial.state.events);
+    await missing.invoke("compact");
+    assert.equal(conversation(missing.state.events).attachments[0].unavailable, true);
+    assert.match(missing.state.lastLog, /attachmentRecoveryGaps=1/);
+  });
+}
+
+for (const firstMode of ["tools", "compact"]) {
+  test(`${firstMode} protects native pasted paths and deleted clipboard images through repeated reductions`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "context-native-references-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const pastePath = join(root, "files", "paste-123.txt");
+    const missingTemporaryImage = join(root, "already-removed-clipboard.png");
+    const imageBytes = Buffer.from("RECORDED_NATIVE_IMAGE_BYTES");
+    let events = harness(root).state.events;
+    events[0].data.content = `Original user prose.\n<pasted_content file="${pastePath}" size="20 bytes" lines="1" />`;
+    events[0].data.attachments = [{
+      type: "file", displayName: "Clipboard.png", path: missingTemporaryImage,
+      mimeType: "image/png", assetId: "native-clipboard",
+    }];
+    events.unshift(event("session.binary_asset", {
+      assetId: "native-clipboard", mimeType: "image/png", data: imageBytes.toString("base64"),
+    }));
+    let durableImagePath;
+    for (const mode of [firstMode, "compact", "compact", "tools", "compact"]) {
+      const h = harness(root);
+      h.state.events = structuredClone(events);
+      if (mode === "tools" && events.some((entry) => entry.type === "session.context_cleared")) {
+        h.state.events.push(...harness(root).state.events.slice(1));
+      }
+      await h.invoke(mode);
+      const active = conversation(h.state.events);
+      const pasted = active.attachments.filter((reference) => reference.path === pastePath);
+      assert.equal(pasted.length, 1, "Native marker path survives in exactly one code-owned reference");
+      const images = active.attachments.filter((reference) => reference.displayName === "Clipboard.png");
+      assert.equal(images.length, 1);
+      assert.notEqual(images[0].path, missingTemporaryImage);
+      assert.deepEqual(await readFile(images[0].path), imageBytes);
+      durableImagePath ??= images[0].path;
+      assert.equal(images[0].path, durableImagePath);
+      if (mode === "compact") {
+        assert.equal(active.messages[0].content, summary, "Generated summary intentionally contains no paths");
+        const payload = JSON.parse(h.state.requests[0].prompt.split("\n\n").at(-1));
+        assert(payload.attachmentReferences.some((reference) => reference.path === pastePath));
+      } else {
+        assert(!h.state.requests[0].prompt.includes(pastePath), "Tool-only worker never rewrites pasted references");
+      }
+      events = h.state.events;
+    }
+  });
+}
+
+test("invalid recorded clipboard bytes cannot fall back to a temporary path and clear", async () => {
+  const h = harness();
+  h.state.events[0].data.attachments = [{
+    type: "file", path: "/temporary/clipboard.png", mimeType: "image/png", assetId: "bad-image",
+  }];
+  h.state.events.unshift(event("session.binary_asset", {
+    assetId: "bad-image", mimeType: "image/png", data: "not base64!",
+  }));
+  await assert.rejects(h.invoke("compact"), /valid base64/);
+  assert(!h.state.calls.includes("generate") && !h.state.calls.includes("checkpoint") && !h.state.calls.includes("clear"));
 });
 
 for (const output of [
@@ -323,12 +436,10 @@ test("logging failure preserves the original command error", async () => {
   await assert.rejects(h.invoke(), (error) => error instanceof AggregateError && /still processing/.test(error.message) && error.errors.length === 2);
 });
 
-test("preconditions reject empty, attached, tool-free and actively compacting histories", async () => {
+test("preconditions reject empty, tool-free and actively compacting histories", async () => {
   for (const [mutate, expected] of [
     [(state) => { state.events = []; }, /No conversation/],
     [(state) => { state.events = state.events.slice(0, 1); }, /No unpruned/],
-    [(state) => { state.events[0].data.attachments = [{}]; }, /attachments/],
-    [(state) => { state.events[2].data.result = { binaryResultsForLlm: [{}] }; }, /attachments/],
     [(state) => { state.events.push(event("session.compaction_start")); }, /compaction is in progress/],
     [(state) => { state.events.push(event("assistant.turn_start")); }, /agent is still responding/],
     [(state) => { state.events.pop(); }, /Unfinished tool calls/],

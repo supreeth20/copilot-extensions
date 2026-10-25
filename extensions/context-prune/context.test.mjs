@@ -175,6 +175,111 @@ test("binary tool evidence retains descriptions, asset IDs and resource URIs wit
   })]).hasAttachments, true);
 });
 
+test("code-owned attachment references survive repeated mixed reductions even if summaries omit them", () => {
+  const refs = [{ type: "file", path: "/fixture/document.pdf", displayName: "Unread requirements",
+    notice: "Reread before relying on contents." }];
+  const events = fixture();
+  for (const mode of ["tools", "compact", "compact", "tools"]) {
+    const messages = conversation(events).messages;
+    const content = mode === "compact" ? summary
+      : replaceObservations(messages, messages.filter((message) => message.role === "tool")
+        .map(({ callId }) => ({ callId, finding: "Known tool outcome." })));
+    events.push(event("session.context_cleared", { initialMessage: replacement(mode, content, "s", refs) }));
+    assert.deepEqual(conversation(events).attachments, refs);
+    assert.equal(conversation(events).hasAttachments, true);
+    assert.doesNotMatch(summary, /document\.pdf/);
+  }
+});
+
+test("native pasted text markers become deduplicated file references without changing user messages", () => {
+  const first = '<pasted_content file="/session/files/paste-123.txt" size="456 bytes" lines="12" />';
+  const second = '<pasted_content lines="3" file="/session/files/paste-456.txt" size="1.5 KB"/>';
+  const content = `  Read these Ελληνικά.\n${first}\n${second}\n${first}\t`;
+  const events = [user(content), user(first)];
+  const original = structuredClone(events);
+  const active = conversation(events);
+  assert.deepEqual(active.messages, [{ role: "user", content }, { role: "user", content: first }]);
+  assert.deepEqual(active.attachments, ["/session/files/paste-123.txt", "/session/files/paste-456.txt"]
+    .map((path) => ({ type: "file", path, mimeType: "text/plain" })));
+  assert.equal(active.hasAttachments, true);
+  assert.deepEqual(events, original);
+});
+
+test("native paste references decode path entities once and preserve literal path characters", () => {
+  const paths = [
+    ["/session/files/Ελληνικά &amp; &quot;quoted&quot; &apos; &#35; &#x3c;.txt", '/session/files/Ελληνικά & "quoted" \' # <.txt'],
+    ["/session/files/literal&amp;quot; & unmatched.txt", "/session/files/literal&quot; & unmatched.txt"],
+  ];
+  const content = paths.map(([encoded]) => `<pasted_content file="${encoded}" size="0" lines="0" />`).join("\n");
+  const active = conversation([user(content)]);
+  assert.deepEqual(active.attachments.map(({ path }) => path), paths.map(([, decoded]) => decoded));
+  assert.equal(active.messages[0].content, content);
+});
+
+test("malformed paste markers and non-user sources never become attachment references", () => {
+  const valid = '<pasted_content file="/session/files/paste-123.txt" size="456" lines="12" />';
+  const malformed = [
+    valid.replace('file="/', 'file="'),
+    valid.replace('size="456"', 'size="-1"'),
+    valid.replace('size="456"', 'size="9007199254740992"'),
+    valid.replace('lines="12"', 'lines="many"'),
+    valid.replace('lines="12"', 'file="/other.txt"'),
+    valid.replace(' lines="12"', ""),
+    valid.replace(" />", ' extra="value" />'),
+    valid.replace(" />", ">"),
+    valid.replace("paste-123", "paste-\u0000"),
+    valid.replace("paste-123", "paste-&#10;"),
+    valid.replace("paste-123", "paste-&#x110000;"),
+    valid.replace('file="', "file='"),
+    valid.replace("paste-123", 'paste-"broken'),
+  ];
+  const events = [
+    ...malformed.map((content) => user(content)),
+    user("Visible text", { transformedContent: valid }),
+    assistant(valid),
+    event("assistant.reasoning", { content: valid }),
+    event("system.notification", { content: valid }),
+    event("user.message", { content: valid }, { agentId: "child" }),
+    event("tool.execution_complete", { toolCallId: "paste-output", result: { content: valid } }),
+  ];
+  const active = conversation(events);
+  assert.deepEqual(active.attachments, []);
+  assert.equal(active.hasAttachments, false);
+  assert.deepEqual(active.messages.slice(0, malformed.length).map(({ content }) => content), malformed);
+});
+
+test("native paste references survive mixed reductions and merge with an existing registry", () => {
+  const path = "/session/files/paste-123.txt";
+  const marker = `<pasted_content file="${path}" size="20 bytes" lines="1" />`;
+  const other = { type: "file", path: "/fixture/requirements.pdf", mimeType: "application/pdf" };
+  const events = [user(marker, { attachments: [other] })];
+  const expected = conversation(events).attachments;
+  assert.equal(expected.length, 2);
+  for (const mode of ["tools", "tools", "compact", "tools", "compact"]) {
+    const active = conversation(events);
+    const prompt = replacement(mode, mode === "tools" ? active.messages : summary, "s", active.attachments);
+    events.push(event("session.context_cleared", { initialMessage: prompt }),
+      user("", { transformedContent: prompt }), user(marker));
+    const replayed = conversation(events);
+    assert.deepEqual(replayed.attachments, expected);
+    assert.equal(replayed.hasAttachments, true);
+    assert.doesNotMatch(summary, /paste-123/);
+  }
+  const existing = { type: "file", path, notice: "Already registered." };
+  const restored = conversation([event("session.context_cleared", {
+    initialMessage: replacement("tools", [{ role: "user", content: marker }], "s", [existing]),
+  }), user(marker)]);
+  assert.deepEqual(restored.attachments, [existing]);
+  const legacyDrop = replacement("tools", [{ role: "user", content: marker }], "s");
+  assert.deepEqual(conversation([event("session.context_cleared", { initialMessage: legacyDrop })]).attachments,
+    [{ type: "file", path, mimeType: "text/plain" }]);
+});
+
+test("malformed saved attachment reference lists cannot silently disappear", () => {
+  const prompt = replacement("compact", summary, "s", [{}]).replace('"attachmentReferences":[{}]', '"attachmentReferences":[null]');
+  assert.throws(() => conversation([event("session.context_cleared", { initialMessage: prompt })]), /Invalid saved attachment references/);
+});
+
 test("repeated blocks preserve source order and multiplicity without duplicating mirrors", () => {
   const block = (thinking) => ({ type: "thinking", thinking });
   const blocks = [block("first"), block("second"), block("first")];

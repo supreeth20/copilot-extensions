@@ -1,0 +1,43 @@
+{
+  "fixture": "Synthetic one-page PDF containing DOCUMENT_RESTORATION_CODE_Z41",
+  "scope": "Baseline delivery and restoration experiments; unsupported initial delivery is not evidence that context clearing broke a working PDF attachment",
+  "loopbackPdfBlob": {
+    "passedChecks": 13,
+    "failedNativeDeliveryChecks": 4,
+    "initialNativeDocumentBlocks": 0,
+    "inlineBytesPersistedInUserAttachment": true,
+    "bytesSurvivedClearAndResume": true,
+    "replayedBlobReachedNativeDocumentInput": false,
+    "extensionCouldRecoverAndPushBytes": true,
+    "hostForwardedBlobReachedNativeDocumentInput": false
+  },
+  "realModelPdfBlobBaseline": {
+    "initialDocumentCodeRead": false,
+    "initialReply": "NONE",
+    "inlineBytesPersisted": true,
+    "nativeAssetReferenceRecorded": false,
+    "qualification": "The first PDF probe incorrectly required a binary_asset event; the completed loopback probe corrected that assumption and verified persisted inline bytes instead."
+  },
+  "realModelPdfFile": {
+    "passedChecks": 4,
+    "failedNativeDeliveryOrSnapshotChecks": 4,
+    "initialReply": "NONE",
+    "replyAfterPathReattachment": "NONE",
+    "replyAfterColdResume": "NONE",
+    "originalBytesRecordedInJournal": false,
+    "nativeAssetReferenceRecorded": false,
+    "extensionJournalOnlyByteRecovery": false,
+    "toolsEnabled": false
+  },
+  "interpretation": [
+    "PDF blobs did not become native document inputs in the tested SDK/provider configurations, including before clearing.",
+    "The path-backed PDF route did not supply readable page content with tools disabled; attachment-by-path is not proof that the model receives its bytes.",
+    "A document-reading tool or a different model/provider/native-document configuration may work; those routes were not validated.",
+    "Do not generalize the successful PNG asset restoration to all PDFs, audio, video or omitted/expired assets."
+  ],
+  "cleanup": {
+    "allOwnedSessionsDeleted": true,
+    "allOwnedRuntimesStopped": true,
+    "remainingIndexedTestSessions": 0
+  }
+}
