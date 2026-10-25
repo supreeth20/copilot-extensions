@@ -76,7 +76,7 @@ or original bytes after clearing and restarting. That requires an additional
 native attachment send, or an extension composer push forwarded by the host;
 putting an asset ID in the retained text does not do it. The implementation instead
 uses file-reference recovery, not composer replay. See the evaluation documentation
-and `evals/context-prune/preservation-gaps.json` for the tested scope and remaining gaps.
+for the tested scope and remaining gaps.
 
 Generation uses the current model, context tier and reasoning effort with normal
 Copilot authentication. Custom provider configurations are not copied; a
