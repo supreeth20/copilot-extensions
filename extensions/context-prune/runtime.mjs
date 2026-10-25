@@ -28,7 +28,7 @@ const summarySchema = {
   required: ["summary"], additionalProperties: false,
 };
 
-export function createContextPrune(getSession, { generate } = {}) {
+export function createContextPrune(getSession, { generate, restartAfterReduction = false } = {}) {
   let operation;
   let needsReload = false;
 
@@ -62,7 +62,8 @@ export function createContextPrune(getSession, { generate } = {}) {
         pending.items.length > (transition ? 1 : 0)) {
       throw new Error("Other tool requests are pending; finish them before changing context");
     }
-    if (tasks.tasks.some((task) => ["running", "idle", "orphaned"].includes(task.status))) {
+    if (tasks.tasks.some((task) => ["running", "orphaned"].includes(task.status) ||
+        (task.status === "idle" && task.type !== "agent"))) {
       throw new Error("Background work is active or unresolved; finish it before changing context");
     }
     if (permissions.items.length) throw new Error("A permission request is pending; resolve it before changing context");
@@ -116,8 +117,12 @@ export function createContextPrune(getSession, { generate } = {}) {
     if (typeof generate !== "function") throw new Error("SDK text generator is not configured");
     const current = { controller: new AbortController() };
     operation = current;
+    const progress = (message) => session.rpc.log({
+      message: `context-prune: ${message}`, type: "context-prune-progress", level: "info", ephemeral: true,
+    });
     try {
       await guard(session);
+      await progress(`Starting ${mode === "tools" ? "tool-output reduction" : "compaction"}; preparing context. Cancel with /context-cancel.`);
       const model = await session.rpc.model.getCurrent();
       if (!model.modelId) throw new Error("The SDK did not return the current model");
       const events = await session.getEvents();
@@ -144,6 +149,7 @@ export function createContextPrune(getSession, { generate } = {}) {
           ...(mode === "compact" && references.length ? { attachmentReferences: references } : {}) }),
       ].filter(Boolean).join("\n\n");
       await unchanged(session, current);
+      await progress("Generating retained context; the main conversation is unchanged.");
       const generated = await generate({
         prompt, responseSchema: mode === "tools" ? findingSchema : summarySchema,
         model: model.modelId, providerId: model.providerId, contextTier: model.contextTier,
@@ -158,6 +164,7 @@ export function createContextPrune(getSession, { generate } = {}) {
       const content = mode === "tools"
         ? replaceObservations(active.messages, generated.observations) : validateSummary(generated.summary);
       const retained = replacement(mode, content, session.sessionId, references);
+      await progress("Generation complete; saving and verifying checkpoint.");
       const saved = await session.rpc.workspaces.addSummary({
         title: `Prepared context ${mode === "tools" ? "tool findings" : "compaction"}`, content: retained,
       });
@@ -170,6 +177,7 @@ export function createContextPrune(getSession, { generate } = {}) {
       current.toolCallId = randomUUID();
       current.retained = retained;
       current.leased = true;
+      await progress(`Checkpoint ${number} verified; applying context replacement.`);
       // Extension tools must be registered at join. Only this short-lived,
       // code-owned authorization can activate the otherwise inert adapter.
       try {
@@ -180,7 +188,7 @@ export function createContextPrune(getSession, { generate } = {}) {
         current.leased = false;
       }
       await session.rpc.log({
-        message: `context-prune: mode=${mode}; checkpoint=${number}; sha256=${createHash("sha256").update(retained).digest("hex")}; messagesCleared=${current.cleared.messagesCleared}; attachmentReferences=${references.length}; attachmentRecoveryGaps=${references.filter((reference) => reference.unavailable).length}. Same-session reload required: /exit, then copilot --resume ${session.sessionId}`,
+        message: `context-prune: mode=${mode}; checkpoint=${number}; sha256=${createHash("sha256").update(retained).digest("hex")}; messagesCleared=${current.cleared.messagesCleared}; attachmentReferences=${references.length}; attachmentRecoveryGaps=${references.filter((reference) => reference.unavailable).length}. ${restartAfterReduction ? "Requesting native /restart to reload this same session. If unavailable, exit" : "Same-session reload required: /exit"}, then copilot --resume ${session.sessionId}`,
         type: "custom-compaction", level: "info",
       });
     } catch (error) {
@@ -190,6 +198,15 @@ export function createContextPrune(getSession, { generate } = {}) {
       throw new Error(`Context was not cleared${current.checkpoint !== undefined ? `; checkpoint ${current.checkpoint} was saved` : ""}. ${error.message}`, { cause: error });
     } finally {
       operation = undefined;
+    }
+    if (restartAfterReduction) {
+      try {
+        // /restart belongs to the TUI host, not commands.invoke's runtime catalog.
+        const result = await session.rpc.commands.enqueue({ command: "/restart" });
+        if (result.queued !== true) throw new Error("The host did not accept the restart command");
+      } catch (error) {
+        throw new Error(`Context replacement was applied; checkpoint ${current.checkpoint} was saved, but automatic restart failed. Do not repeat the reduction. Exit Copilot, then run copilot --resume ${session.sessionId}. Detail: ${error.message}`, { cause: error });
+      }
     }
   }
 

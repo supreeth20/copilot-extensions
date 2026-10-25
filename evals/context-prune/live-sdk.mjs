@@ -17,6 +17,9 @@ if (!process.env.COPILOT_EVAL_SDK || !process.env.COPILOT_EVAL_CLI) {
 }
 const { CopilotClient, RuntimeConnection } = await import(pathToFileURL(resolve(process.env.COPILOT_EVAL_SDK)).href);
 const attachmentEvaluation = process.argv.includes("--attachments");
+const idleAgentEvaluation = process.argv.includes("--idle-agents");
+const idleAgentBaseline = process.argv.includes("--idle-agents-baseline");
+const hookEvaluation = process.argv.includes("--hooks");
 const fixtureImage = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAJklEQVR4nO3NMQ0AAAwDoPo33arYsQQMkB6LQCAQCAQCgUAg+BIMi1X0pjxKe0gAAAAASUVORK5CYII=";
 const root = resolve("evals/context-prune/.runs", randomUUID());
 const workspace = join(root, "workspace");
@@ -25,6 +28,7 @@ const checks = [];
 const metrics = {
   generationCalls: 0, workerToolExecutions: 0, deletedWorkers: 0,
   diagnosticHandlerCalls: 0, diagnosticHandlerFailures: 0, deletedParentSessions: 0, compactionRounds: [],
+  progressMessages: 0, commitPreToolHooks: 0,
 };
 const checkpoints = new Map();
 const generationInputs = [];
@@ -121,6 +125,13 @@ function configuration() {
     infiniteSessions: { enabled: true },
     availableTools: ["diagnostic", "context_commit", ...(attachmentEvaluation ? ["read_attachment"] : [])],
     tools: [...tools, ...extension.tools],
+    onEvent: (event) => {
+      if (event.type === "session.info" && event.data.infoType === "context-prune-progress") metrics.progressMessages++;
+    },
+    ...(hookEvaluation ? { hooks: { onPreToolUse: async (input) => {
+      if (input.toolName === "context_commit") metrics.commitPreToolHooks++;
+      return { permissionDecision: "allow" };
+    } } } : {}),
     commands: extension.commands,
     onPermissionRequest: async (request) => ({ kind: request.kind === "custom-tool" &&
       ["diagnostic", ...(attachmentEvaluation ? ["read_attachment"] : [])].includes(request.toolName) ? "approve" : "reject" }),
@@ -152,6 +163,8 @@ async function reduce(mode, number) {
   check(`${phase}:no-main-agent-generation`, !appendedBeforeClear.some((event) =>
     ["user.message", "assistant.turn_start", "assistant.message", "tool.execution_start"].includes(event.type)));
   check(`${phase}:parent-stays-idle`, !(await session.rpc.metadata.isProcessing()).processing);
+  check(`${phase}:progress-reported`, metrics.progressMessages >= metrics.generationCalls * 4);
+  if (hookEvaluation) check(`${phase}:commit-pre-tool-hook-ran`, metrics.commitPreToolHooks >= metrics.generationCalls);
   const projected = conversation(events).messages;
   if (mode === "tools") {
     check(`${phase}:exact-narrative-retention`, hash(JSON.stringify(projected.filter((message) => message.role !== "finding"))) ===
@@ -398,11 +411,54 @@ async function attachmentScenario() {
   check("attachments:workers-executed-no-tools", metrics.workerToolExecutions === 0);
 }
 
+async function idleAgentScenario() {
+  phase = "idle-agent-input";
+  await session.sendAndWait({ prompt: "Call diagnostic with fail=false once, then reply ACK." }, 180000);
+  const secret = `AGENT_${randomUUID().replaceAll("-", "")}`;
+  const { agentId } = await session.rpc.tasks.startAgent({
+    agentType: "general-purpose", name: "idle-recovery-fixture",
+    prompt: `Remember this synthetic code for a later same-task follow-up: ${secret}. Reply READY only. Do not use tools or delegate.`,
+  });
+  await session.rpc.tasks.waitForPending();
+  const idle = (await session.rpc.tasks.list()).tasks.find((task) => task.id === agentId);
+  assert.equal(idle?.status, "idle", "Establish an actual idle subagent before reduction");
+  check("idle-agent:established", true);
+  phase = "idle-agent-compact";
+  if (!idleAgentBaseline) await reduce("compact", 1);
+  check(`idle-agent:still-idle-${idleAgentBaseline ? "without-reduction" : "after-clear"}`,
+    (await session.rpc.tasks.list()).tasks.some((task) => task.id === agentId && task.status === "idle"));
+  const liveSent = await session.rpc.tasks.sendMessage({
+    id: agentId, message: "Same-task follow-up: return only the exact synthetic code I asked you to remember. Do not use tools.",
+  });
+  check(`idle-agent:followup-${idleAgentBaseline ? "without-reduction" : "after-clear"}-delivered`, liveSent.sent);
+  await session.rpc.tasks.waitForPending();
+  const liveResult = (await session.rpc.tasks.list()).tasks.find((task) => task.id === agentId);
+  check(`idle-agent:own-context-retained-${idleAgentBaseline ? "without-reduction" : "after-clear"}`,
+    (liveResult?.latestResponse ?? liveResult?.result ?? "").includes(secret));
+  await restart();
+  const resumed = (await session.rpc.tasks.list()).tasks.find((task) => task.id === agentId);
+  const sent = await session.rpc.tasks.sendMessage({
+    id: agentId, message: "Same-task follow-up: return only the exact synthetic code I asked you to remember. Do not use tools.",
+  });
+  metrics.idleAgentColdResume = {
+    reductionApplied: !idleAgentBaseline, taskStillRegistered: Boolean(resumed),
+    followupDelivered: sent.sent, ...(sent.error ? { error: sent.error } : {}),
+  };
+  // Cold-runtime agent restoration is an observed host capability, not supplied
+  // by context-prune. Record it separately from live post-clear reuse.
+  if (!sent.sent) return;
+  await session.rpc.tasks.waitForPending();
+  const result = (await session.rpc.tasks.list()).tasks.find((task) => task.id === agentId);
+  check("idle-agent:retained-own-context", (result?.latestResponse ?? result?.result ?? "").includes(secret));
+  const cancelled = await session.rpc.tasks.cancel({ id: agentId });
+  check("idle-agent:owned-agent-cancelled", cancelled.cancelled);
+}
+
 try {
   client = makeClient();
   session = await client.createSession(configuration());
   ownedSessionId = session.sessionId;
-  await (attachmentEvaluation ? attachmentScenario() : replayScenario());
+  await (idleAgentEvaluation ? idleAgentScenario() : attachmentEvaluation ? attachmentScenario() : replayScenario());
 } catch (error) {
   if (process.env.COPILOT_EVAL_DEBUG === "1") console.error(error);
   checks.push({ name: `${phase}:integration-completed`, pass: false, errorClass: error.constructor.name });

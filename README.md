@@ -44,9 +44,12 @@ If extensions are not discovered, start with `copilot --experimental`. The SDK
 requires a registered internal transition adapter; its descriptor is discoverable,
 but only code can authorize it. See the extension documentation for that constraint.
 
-**After each reduction**, run `/exit`, then the exact
-`copilot --resume <same-session-id>` command printed by the extension. This resumes
-the existing conversation; it does not create a new session.
+**After each successful reduction**, the installed extension queues native
+`/restart` to reload the same session. Let restart finish before continuing.
+Native folder-trust or extension permission prompts may reappear; these are not
+bypassed. If restart is unavailable, exit and run the exact
+`copilot --resume <same-session-id>` command printed by the extension. Do not
+repeat an already-applied reduction.
 
 ### Limitations
 
@@ -99,7 +102,7 @@ node --test evals/context-prune/independent.test.mjs
 
 See [independent evaluation instructions](evals/context-prune/README.md) for
 live SDK checks and explicitly classified upstream limitations. The combined
-regression/independent suite has 140 passing tests. The focused attachment-path
+regression/independent suite has 153 passing tests. The focused attachment-path
 scenario passes 63 real SDK/model checks, including recovering a deleted image
 source from recorded bytes and rereading native pasted text after drop, two
 compactions and cold resumes. The earlier

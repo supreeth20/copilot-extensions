@@ -63,6 +63,40 @@ test("snapshot permits exactly one correlated command-owned request and no other
   assert.throws(() => assertUnchanged([...events, owned, user("new input")], operation), /history changed/);
 });
 
+test("snapshot accepts correlated commit hooks and accounting flushes but rejects unrelated hooks", () => {
+  const events = fixture();
+  const transition = { sessionId: "session", toolCallId: "owned", requestId: "request", toolName: "context_commit" };
+  const operation = { eventIds: events.map(({ id }) => id), transition };
+  const hooks = [
+    event("hook.start", { hookInvocationId: "pre", hookType: "preToolUse", input: {
+      sessionId: "session", toolCalls: [{ id: "owned", name: "context_commit", args: {} }],
+    } }),
+    event("hook.end", { hookInvocationId: "pre", hookType: "preToolUse", success: true }),
+    event("hook.start", { hookInvocationId: "permission", hookType: "permissionRequest", input: {
+      sessionId: "session", toolName: "context_commit", toolInput: {},
+    } }),
+    event("hook.end", { hookInvocationId: "permission", hookType: "permissionRequest", success: true }),
+  ];
+  const request = event("external_tool.requested", transition);
+  assert.doesNotThrow(() => assertUnchanged([...events, ...hooks, request], operation));
+  assert.doesNotThrow(() => assertUnchanged([...events, event("session.usage_checkpoint", {})],
+    { eventIds: operation.eventIds }));
+  for (const mutate of [
+    (copy) => { copy[0].data.input.toolCalls[0].id = "foreign"; },
+    (copy) => { copy[0].data.input.toolCalls.push({ id: "other", name: "view", args: {} }); },
+    (copy) => { copy[2].data.input.sessionId = "foreign"; },
+    (copy) => { copy[1].data.output = { additionalContext: "new evidence" }; },
+    (copy) => { copy[1].data.success = false; },
+    (copy) => { copy[2].agentId = "child"; },
+    (copy) => { copy.splice(1, 1); },
+  ]) {
+    const copy = structuredClone(hooks);
+    mutate(copy);
+    assert.throws(() => assertUnchanged([...events, ...copy, request], operation), /history changed/);
+  }
+  assert.throws(() => assertUnchanged([...events, ...hooks, request, user("new work")], operation), /history changed/);
+});
+
 for (const [label, values] of [
   ["missing", []], ["duplicate", [...observations, ...observations]],
   ["unknown", [{ callId: "other", finding: "x" }]], ["blank", [{ callId: "call-1", finding: " " }]],

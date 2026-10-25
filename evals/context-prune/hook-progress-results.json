@@ -1,0 +1,294 @@
+{
+  "checks": [
+    {
+      "name": "startup:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "attachments:native-image-file-has-recorded-asset",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:progress-reported",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:commit-pre-tool-hook-ran",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop:exact-narrative-retention",
+      "pass": true
+    },
+    {
+      "name": "attachments:native-paste-code-owned-before-first-clear",
+      "pass": true
+    },
+    {
+      "name": "attachments:deleted-image-source-recovered-before-first-clear",
+      "pass": true
+    },
+    {
+      "name": "attachments:drop-keeps-original-document-path",
+      "pass": true
+    },
+    {
+      "name": "attachments:pasted-bytes-saved-as-durable-file",
+      "pass": true
+    },
+    {
+      "name": "attachments:image-bytes-saved-as-durable-file",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop-resume:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "attachment-drop-resume:same-session",
+      "pass": true
+    },
+    {
+      "name": "attachments:drop-references-survive-cold-resume",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-drop:model-reads-updated-original-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-drop:model-reads-saved-pasted-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-drop:model-reads-native-pasted-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-drop:deleted-image-still-readable-from-durable-path",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:progress-reported",
+      "pass": true
+    },
+    {
+      "name": "attachment-compact:commit-pre-tool-hook-ran",
+      "pass": true
+    },
+    {
+      "name": "attachments:exact-selection-text-path-and-range",
+      "pass": true
+    },
+    {
+      "name": "attachments:binary-tool-description-retained",
+      "pass": true
+    },
+    {
+      "name": "attachments:binary-attachment-name-retained",
+      "pass": true
+    },
+    {
+      "name": "attachments:binary-bytes-not-copied",
+      "pass": true
+    },
+    {
+      "name": "attachments:inspection-gap-explicit",
+      "pass": true
+    },
+    {
+      "name": "attachments:recorded-asset-references-retained",
+      "pass": true
+    },
+    {
+      "name": "attachments:summary-retains-approval-and-status",
+      "pass": true
+    },
+    {
+      "name": "attachments:code-retains-evidence-references",
+      "pass": true
+    },
+    {
+      "name": "attachments:summary-retains-inspection-gap",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:same-session",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:exact-active-summary",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:original-evidence-recoverable",
+      "pass": true
+    },
+    {
+      "name": "attachment-resume:all-prior-checkpoints-intact",
+      "pass": true
+    },
+    {
+      "name": "attachments:original-attachment-event-intact-after-resume",
+      "pass": true
+    },
+    {
+      "name": "attachments:original-selection-recoverable",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-compact:model-reads-updated-original-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-compact:model-reads-saved-pasted-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-compact:model-reads-native-pasted-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-compact:deleted-image-still-readable-from-durable-path",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:worker-tools-disabled",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:command-dispatch",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:exact-checkpoint",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:original-journal-survives",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:no-main-agent-generation",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:parent-stays-idle",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:progress-reported",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:commit-pre-tool-hook-ran",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:only-sdk-required-adapter",
+      "pass": true
+    },
+    {
+      "name": "attachment-repeat-compact:same-session",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-repeat-compact:model-reads-updated-original-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-repeat-compact:model-reads-saved-pasted-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-repeat-compact:model-reads-native-pasted-document",
+      "pass": true
+    },
+    {
+      "name": "attachments:after-repeat-compact:deleted-image-still-readable-from-durable-path",
+      "pass": true
+    },
+    {
+      "name": "attachments:all-generation-workers-deleted",
+      "pass": true
+    },
+    {
+      "name": "attachments:workers-executed-no-tools",
+      "pass": true
+    },
+    {
+      "name": "owned-parent-session-deleted-from-history",
+      "pass": true
+    },
+    {
+      "name": "owned-parent-client-stopped",
+      "pass": true
+    }
+  ],
+  "metrics": {
+    "generationCalls": 3,
+    "workerToolExecutions": 0,
+    "deletedWorkers": 3,
+    "diagnosticHandlerCalls": 1,
+    "diagnosticHandlerFailures": 0,
+    "deletedParentSessions": 1,
+    "compactionRounds": [],
+    "progressMessages": 12,
+    "commitPreToolHooks": 3,
+    "recordedAttachmentAssetReferences": 2
+  },
+  "passed": 69,
+  "failed": 0
+}

@@ -17,7 +17,8 @@ Each reduction command performs this pipeline in SDK code:
    worker for structured JSON text.
 3. Recheck state and validate the returned findings or six-section summary.
 4. Assemble the replacement deterministically, save an exact checkpoint, and read-verify it.
-5. Recheck the snapshot, apply the replacement, and print same-session reload instructions.
+5. Recheck the snapshot, apply the replacement, revoke authorization, and queue
+   native `/restart` to reload the same session.
 
 The main agent receives no preparation prompt and makes no orchestration calls.
 Drop mode supplies only tool evidence to its worker, not narrative to rewrite.
@@ -119,20 +120,44 @@ or spill files that have expired; absent outcomes remain unknown.
 ## Failure, cancellation and reload
 
 Queued input, steering, active turns, unresolved tool/permission requests,
-background tasks and native compaction block reduction. New journal events
-invalidate the snapshot; only the exact code-owned transition request is exempt.
+running/orphaned background tasks, idle non-agent tasks and native compaction block
+reduction. Idle subagents waiting for follow-up are allowed and are not cancelled.
+If one resumes during preparation, the repeated guards or new journal events
+invalidate the operation. Clearing parent context leaves live idle subagents
+usable, but reloading the CLI can lose their live handles: cold-runtime
+restoration is a host capability, not provided by this extension.
+New journal events invalidate the snapshot. Only usage-accounting flushes, the
+exact code-owned transition request and its correlated successful pre-tool and
+permission hooks without output are exempt. Hook-supplied context, failures,
+unrelated hooks and new conversation/tool events still prevent clearing.
 Invalid text or checkpoint readback aborts before clearing. `/context-cancel`
 aborts generation/preparation, but cannot interrupt a clear already underway.
+
+Both commands emit transient user-visible messages when starting, generating,
+verifying the checkpoint and applying the replacement. These messages are not
+persisted into the conversation or treated as snapshot changes.
 
 A checkpoint saved before a later failure remains available and is reported;
 unrelated/native checkpoints are not deleted. An ambiguous clear or post-clear
 failure requires reload rather than an unsafe retry. Checkpoints are custom
 persistence, not native compaction-counter entries.
 
-**After each successful reduction:** run `/exit`, then the exact
-`copilot --resume <same-session-id>` command printed by the extension. This
-continues the existing conversation. This CLI can retain stale live messages
-after clearing, so do not continue task work before reloading.
+**After each successful reduction**, the installed extension requests native
+`/restart` using `session.rpc.commands.enqueue`, after checkpoint verification,
+application and transition-authorization cleanup. Restart is a TUI-host command,
+not a command available through the runtime's `commands.invoke` catalog. No
+terminal keystrokes, process kills or model instructions perform the restart.
+The native loader restores supported live sessions; folder-trust or extension
+permission prompts may reappear and are not bypassed.
+
+If restart is unavailable or fails, exit and run the exact
+`copilot --resume <same-session-id>` command printed by the extension. An enqueue
+receipt proves acceptance, not completed restart. Do not repeat an applied
+reduction or continue task work before reloading: this CLI can retain stale live
+messages after clearing. Failed/cancelled preparation and ambiguous clearing do
+not request automatic restart. SDK-only evaluations lack a TUI host and keep
+explicit cold resumes (`restartAfterReduction` is enabled by the installed
+entrypoint, not by default in the reusable runtime).
 
 ## Skill and tests
 

@@ -5,6 +5,7 @@ import { createSdkGenerator, findCliPath } from "./generation.mjs";
 
 let session;
 session = await joinSession(createContextPrune(() => session, {
+  restartAfterReduction: true,
   generate: createSdkGenerator(async (options) => new CopilotClient({
     ...options, connection: RuntimeConnection.forStdio({ path: await findCliPath() }),
   })),

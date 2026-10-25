@@ -10,7 +10,7 @@ const summary = ["Goal", "Constraints", "State", "Decisions", "Next", "Reference
   .map((heading) => `## ${heading}\nRetained ${heading.toLowerCase()}.`).join("\n\n");
 let sequence = 0;
 const event = (type, data = {}, extra = {}) => ({ id: `runtime-${++sequence}`, type, data, ...extra });
-function harness(workspace) {
+function harness(workspace, options = {}) {
   const state = {
     events: [
       event("user.message", { content: "Private user narrative; preserve case; no deployment." }),
@@ -26,6 +26,13 @@ function harness(workspace) {
     send: async () => { throw new Error("Commands must never prompt the main agent"); },
     setTools: async () => { throw new Error("Extension connections cannot replace SDK external tools"); },
     rpc: {
+      commands: { enqueue: async (request) => {
+        state.calls.push("restart");
+        state.restartRequest = request;
+        await state.hooks.restart?.();
+        if (state.failRestart) throw new Error("restart connection failed");
+        return { queued: state.restartAccepted !== false };
+      } },
       model: { getCurrent: async () => ({ modelId: "selected-model", contextTier: "long_context" }) },
       queue: { pendingItems: async () => state.queue },
       tools: {
@@ -72,8 +79,12 @@ function harness(workspace) {
         state.events.push(event("session.context_cleared", { initialMessage: prompt }));
         return { messagesCleared: 3 };
       } },
-      log: async ({ message }) => {
+      log: async ({ message, ephemeral }) => {
         if (state.failLog) throw new Error("logging failed");
+        if (ephemeral) {
+          (state.progress ??= []).push(message);
+          return;
+        }
         state.calls.push("log");
         state.lastLog = message;
       },
@@ -89,7 +100,7 @@ function harness(workspace) {
       observations: [{ callId: "test-call", finding: "node --test failed at test.js:7; not verified fixed." }],
     };
   };
-  const extension = createContextPrune(() => session, { generate });
+  const extension = createContextPrune(() => session, { generate, ...options });
   const invoke = (mode = "tools", args = "", sessionId = session.sessionId) =>
     extension.commands.find((command) => command.name === (mode === "tools" ? "context-drop-tools" : "context-compact"))
       .handler({ sessionId, args });
@@ -116,9 +127,50 @@ for (const mode of ["tools", "compact"]) {
     assert.match(h.state.lastLog, /copilot --resume same-session/);
     assert.equal(h.state.requests[0].model, "selected-model");
     assert.equal(h.state.requests[0].contextTier, "long_context");
+    assert.equal(h.state.progress.length, 4);
+    assert.match(h.state.progress[0], /Starting/);
+    assert.match(h.state.progress.at(-1), /applying context replacement/);
     await assert.rejects(h.invoke(), /Reload this session first/);
   });
 }
+
+for (const mode of ["tools", "compact"]) {
+  test(`${mode} requests native restart only after a verified clear and revoked authorization`, async () => {
+    const h = harness(undefined, { restartAfterReduction: true });
+    h.state.hooks.restart = async () => {
+      assert.match(h.state.lastLog, /Requesting native \/restart/);
+      await assert.rejects(h.extension.tools[0].handler({}, h.state.invocation), /Only the command/);
+      await assert.rejects(h.invoke(), /Reload this session first/);
+    };
+    await h.invoke(mode);
+    assert.deepEqual(h.state.restartRequest, { command: "/restart" });
+    assert.equal(h.state.calls.filter((call) => call === "restart").length, 1);
+    assert(h.state.calls.indexOf("restart") > h.state.calls.indexOf("clear"));
+    assert(h.state.calls.indexOf("restart") > h.state.calls.indexOf("log"));
+  });
+}
+
+test("failed, cancelled and ambiguous reductions never request restart", async () => {
+  for (const failure of ["failGeneration", "failSave", "corrupt", "failExecute", "failClear", "cancel"]) {
+    const h = harness(undefined, { restartAfterReduction: true });
+    if (failure === "cancel") h.state.hooks.generate = () => h.cancel();
+    else h.state[failure] = true;
+    await assert.rejects(h.invoke());
+    assert(!h.state.calls.includes("restart"));
+  }
+});
+
+test("unsupported or failed automatic restart reports applied context and manual recovery, never retries", async () => {
+  for (const failure of ["unsupported", "connection"]) {
+    const h = harness(undefined, { restartAfterReduction: true });
+    if (failure === "unsupported") h.state.restartAccepted = false;
+    else h.state.failRestart = true;
+    await assert.rejects(h.invoke(), /replacement was applied.*automatic restart failed.*Do not repeat.*copilot --resume same-session/);
+    await assert.rejects(h.invoke(), /Reload this session first/);
+    assert.equal(h.state.calls.filter((call) => call === "clear").length, 1);
+    assert.equal(h.state.calls.filter((call) => call === "restart").length, 1);
+  }
+});
 
 test("drop gives the generator only tool evidence, never narrative to rewrite", async () => {
   const h = harness();
@@ -314,6 +366,8 @@ for (const [field, value] of [
   ["pending", { items: [{ toolName: "context_apply" }] }],
   ["permissions", { items: [{}] }], ["processing", true],
   ...["running", "idle", "orphaned"].map((status) => ["tasks", { tasks: [{ status }] }]),
+  ...["running", "orphaned"].map((status) => ["tasks", { tasks: [{ type: "agent", status }] }]),
+  ["tasks", { tasks: [{ type: "client", status: "idle" }] }],
 ]) {
   test(`${field} blocks before generation and again before checkpoint`, async () => {
     const before = harness();
@@ -324,6 +378,28 @@ for (const [field, value] of [
     after.state.hooks.generate = async () => { after.state[field] = value; };
     await assert.rejects(after.invoke());
     assert(!after.state.calls.includes("checkpoint") && !after.state.calls.includes("clear"));
+  });
+}
+
+for (const mode of ["tools", "compact"]) {
+  test(`${mode} allows idle subagents without cancelling or removing them`, async () => {
+    const h = harness();
+    const tasks = [{ type: "agent", id: "reviewer", status: "idle", result: "Review finished." }];
+    h.state.tasks.tasks = structuredClone(tasks);
+    await h.invoke(mode);
+    assert(h.state.calls.includes("clear"));
+    assert.deepEqual(h.state.tasks.tasks, tasks);
+  });
+}
+
+for (const phase of ["generate", "read", "execute"]) {
+  test(`idle subagent resuming during ${phase} prevents clearing`, async () => {
+    const h = harness();
+    const task = { type: "agent", id: "reviewer", status: "idle" };
+    h.state.tasks.tasks = [task];
+    h.state.hooks[phase] = async () => { task.status = "running"; };
+    await assert.rejects(h.invoke("compact"), /Background work is active/);
+    assert(!h.state.calls.includes("clear"));
   });
 }
 

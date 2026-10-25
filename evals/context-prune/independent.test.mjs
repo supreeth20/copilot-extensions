@@ -92,7 +92,7 @@ function harness(events = baseline()) {
       tasks: { list: async () => state.tasks },
       permissions: { pendingRequests: async () => state.permissions },
       metadata: { isProcessing: async () => ({ processing: state.processing }) },
-      log: async () => { state.trace.push("log"); },
+      log: async ({ ephemeral }) => { if (!ephemeral) state.trace.push("log"); },
       workspaces: {
         getWorkspace: async () => ({ workspace: { cwd: "/synthetic" } }),
         addSummary: async ({ content }) => {

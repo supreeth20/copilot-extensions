@@ -60,12 +60,40 @@ after verifying its owned process has stopped.
 
 | Suite | Pass | Fail |
 | --- | ---: | ---: |
-| Regression and migrated independent assertions combined | 140 | 0 |
+| Regression and migrated independent assertions combined | 153 | 0 |
 | Real SDK attachment paths, deleted image source, drop/two compacts and cold resumes | 63 | 0 |
 | Earlier actual TUI oversized paste and clipboard image, drop/compact and cold resumes | 20 | 0 |
+| Hook-enabled SDK attachment recovery and progress-event assertions | 69 | 0 |
+
+`hook-progress-results.json` records a subsequent `--attachments --hooks` run:
+three code-owned commit pre-tool hooks ran, 12 transient progress messages were
+observed, and drop/two compacts with cold resumes passed. This is SDK event
+verification, not a new visual Orca assertion. Unit tests cover the exact native
+pre-tool/permission hook journal shapes observed in the reported failing session,
+including rejection of foreign hooks, failures and added hook context.
+
+`native-command-results.json` records an actual Orca TUI check, not SDK dispatch
+alone. The initial deterministic fixture retained the same runtime command
+catalog after clearing, showed native restart autocomplete and all four progress
+messages, and verified queued native restart. A subsequent command used the
+unchanged production entrypoint and real SDK generation: `/context-compact`
+automatically restarted the CLI, the journal recorded shutdown and same-session
+resume, `/version` executed afterward, and restart autocomplete remained visible.
+Native folder-trust and extension permission prompts reappeared. The user's
+command/autocomplete failure was not reproduced, so its root cause is not claimed
+fixed. Both reduction modes' restart ordering and explicit failure recovery are
+covered by unit tests; only compact used the real generator in this TUI check.
 
 `native-reference-results.json` records the latest hardening implementation;
 `attachment-path-results.json` retains the earlier 44-check file-reference run.
+
+`live-sdk.mjs --idle-agents` tests a real idle subagent, parent compaction,
+same-handle follow-up with retained child context, and cold resume. Add
+`--idle-agents-baseline` to omit reduction for comparison. Live post-clear reuse
+works; in both tested cold-runtime cases the task handle disappeared and
+`sendMessage` reported "Agent not found or not accepting messages". Reports keep
+this host limitation in `metrics.idleAgentColdResume`, not as a passing assertion
+of cold-resume reusability. Parent/worker sessions and run files are deleted.
 Original document paths and saved pasted text survived both reduction modes and
 cold resumes; the real model reread them through the fixture tool and returned
 the updated file contents rather than stale content. Pasted image and binary-tool
